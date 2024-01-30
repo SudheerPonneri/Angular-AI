@@ -1,0 +1,2736 @@
+package com.fis.bom.util;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
+
+import org.apache.log4j.Logger;
+import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.xssf.usermodel.XSSFCell;
+import org.apache.poi.xssf.usermodel.XSSFCellStyle;
+import org.apache.poi.xssf.usermodel.XSSFRow;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
+import com.fis.bom.util.model.Context;
+import com.fis.bom.util.model.PoiCopySheet;
+import com.fis.bom.util.model.servicecontract.BusinessRuleInfo;
+import com.fis.bom.util.model.servicecontract.ServiceContractFieldInfo;
+import com.fis.bom.util.model.servicecontract.ServiceContrctInfo;
+import com.fis.bom.util.model.swagger.Operation;
+import com.fis.bom.util.model.swagger.Path;
+import com.fis.bom.util.model.xsd.Element;
+
+/**
+ * This class is responsible for comparing different version of Schema set. This class takes the
+ * folders holding old and new schemas, compares the same schema of different version and creates
+ * service contract document in Excel format. The first tab of the document represents the
+ * difference between elements of old and new schema. The second tab creates schema element
+ * information in detail
+ */
+public class RESTServiceContractWriter {
+
+  static Logger log = Logger.getLogger(RESTServiceContractWriter.class.getName());
+  XSSFWorkbook wb = null;
+  XSSFCellStyle csLable;
+  XSSFCellStyle csValue;
+  XSSFCellStyle csAggregate;
+  XSSFCellStyle csEndAggregate;
+  XSSFCellStyle csTableTitle;
+  XSSFCellStyle csHeading2;
+  XSSFCellStyle csSubHeading1;
+  XSSFCellStyle csRevisionHeader;
+  XSSFRow row;
+  SwaggerReader swaggerReader;
+  ClassLoader classLoader = this.getClass().getClassLoader();
+
+  static XSSFSheet s;
+  // static int sheetrownum = 0;
+  static int spacecount = 0;
+  static int sheetcount = 0;
+  int rowNumber = 0;
+  private Map<String, String> headerBusinessNameMap = new HashMap<String, String>();
+  public static final String REST_API = "rest-api";
+
+  // List<Element> mfList;
+  Context context;
+
+  /**
+   * This method takes three arguments. This method loops through each schema within new schema
+   * folder finds similar schema from old schema folder and calls createServiceContract.
+   *
+   * @param args args[0]: New schema folder location args[1]: Old schema folder location args[2]:
+   *     Output folder location
+   */
+  // public static void main(String[] args) {
+  //
+  // // Create service contract for request message
+  // createServiceContract(newVersionFolder, oldVersionFolder, outputFolder,
+  // newVersion, nameWithoutTypeAndVer,
+  // oldVersion, "Rqst");
+  //
+  // writefile();
+  // }
+
+  public void populateHeaderBusinessNameMap() {
+    headerBusinessNameMap.put("uuid", "Message Unique Identifier");
+    headerBusinessNameMap.put("Content-Type", "Content Type");
+    headerBusinessNameMap.put("Accept-Language", "Accept Language");
+    headerBusinessNameMap.put("application-id", "Application Id");
+    headerBusinessNameMap.put("Authorization", "Authorization");
+    headerBusinessNameMap.put("organization-id", "Organization Id");
+    headerBusinessNameMap.put("source-id", "Source Id");
+    headerBusinessNameMap.put("client-metadata", "Client Metadata");
+    headerBusinessNameMap.put("device-id", "Device Id");
+    headerBusinessNameMap.put("accepted-timestamp", "Accepted Timestamp");
+    headerBusinessNameMap.put("access-type", "Access Type");
+    headerBusinessNameMap.put(
+        "financialEntityOrganizationUnitIdentifier",
+        "Financial Entity Organization Unit Identifier");
+    headerBusinessNameMap.put(
+        "financialEntitySystemOfRecordApplicationName",
+        "Financial Entity System Of Record Application Name");
+    headerBusinessNameMap.put(
+        "financialEntitySystemOfRecordProcessorName",
+        "financial Entity System Of Record Processor Name");
+    headerBusinessNameMap.put("involvedPartyIdentifier", "Involved Party Identifier");
+    headerBusinessNameMap.put(
+        "involvedPartySystemOfRecordApplicationName",
+        "Involved Party System Of Record Application Name");
+    headerBusinessNameMap.put(
+        "involvedPartySystemOfRecordProcessorName",
+        "Involved Party System Of Record Processor Name");
+  }
+
+  public RESTServiceContractWriter(SwaggerReader swaggerReader, Context context) throws Exception {
+    // this.mfList = mfList;
+    this.context = context;
+    this.swaggerReader = swaggerReader;
+    populateHeaderBusinessNameMap();
+  }
+
+  public void createNewWorkbook() {
+
+    String fullFileName = classLoader.getResource("styleTemplate.xlsx").getFile();
+    File file = new File(fullFileName);
+    try {
+      wb = (XSSFWorkbook) WorkbookFactory.create(file);
+    } catch (InvalidFormatException e) {
+      e.printStackTrace();
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+
+    XSSFSheet sheet = wb.getSheet("Cover Page");
+    XSSFCell cell = sheet.getRow(0).getCell(1);
+    csValue = cell.getCellStyle();
+    csValue.setWrapText(true);
+
+    cell = sheet.getRow(0).getCell(0);
+    csLable = cell.getCellStyle();
+    cell.setCellStyle(csValue);
+    csLable.setWrapText(true);
+
+    cell = sheet.getRow(0).getCell(2);
+    csTableTitle = cell.getCellStyle();
+    cell.setCellStyle(csValue);
+    csTableTitle.setWrapText(true);
+
+    cell = sheet.getRow(0).getCell(3);
+    csAggregate = cell.getCellStyle();
+    cell.setCellStyle(csValue);
+    csAggregate.setWrapText(true);
+
+    csEndAggregate = csAggregate;
+
+    cell = sheet.getRow(0).getCell(4);
+    csHeading2 = cell.getCellStyle();
+    cell.setCellStyle(csValue);
+    csHeading2.setWrapText(true);
+
+    cell = sheet.getRow(0).getCell(5);
+    csSubHeading1 = cell.getCellStyle();
+    cell.setCellStyle(csValue);
+    csSubHeading1.setWrapText(true);
+
+    cell = sheet.getRow(0).getCell(6);
+    csRevisionHeader = cell.getCellStyle();
+    cell.setCellStyle(csValue);
+    csRevisionHeader.setWrapText(true);
+  }
+
+  private void swaggerOnlyWritefile(String operation, String path) {
+
+    try {
+      // Output file
+      // IpIpRelationship //API Name //API Version
+
+      String fileName =
+          "ENGAGE "
+              + context.swaggerContractInfo.getResourceName()
+              + " "
+              + operation
+              + " REST Service Contract "
+              + context.swaggerContractInfo.getVersion().replaceAll("\\.", "_")
+              + ".xlsx";
+
+      FileOutputStream out = new FileOutputStream(path + File.separator + fileName);
+      wb.write(out);
+      out.close();
+
+      //	      String restApiArtifactoryPath =
+      //	          context.outputFolder
+      //	              + File.separator
+      //	              + "rest-api"
+      //	              + File.separator
+      //	              + "artifactory"
+      //	              + File.separator
+      //	              + "REST Services"
+      //	              + File.separator
+      //	              + context.swaggerContractInfo.getResourceName().toLowerCase()
+      //	              + File.separator
+      //	              + context.swaggerContractInfo.getVersion().trim().replaceAll("\\.", "_")
+      //	              + File.separator
+      //	              + fileName;
+      //
+      //	      String restApiteamsPath =
+      //	          context.outputFolder
+      //	              + File.separator
+      //	              + "rest-api"
+      //	              + File.separator
+      //	              + "teams"
+      //	              + File.separator
+      //	              + "REST Services"
+      //	              + File.separator
+      //	              + context.swaggerContractInfo.getResourceName().toLowerCase()
+      //	              + File.separator
+      //	              + context.swaggerContractInfo.getVersion().trim().replaceAll("\\.", "_")
+      //	              + File.separator
+      //	              + fileName;
+      //
+      //	      java.nio.file.Path source = Paths.get(path + File.separator + fileName);
+      //	      java.nio.file.Path target = Paths.get(restApiArtifactoryPath);
+      //	      Files.createDirectories(target.getParent());
+      //	      Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+      //
+      //	      java.nio.file.Path targetteam = Paths.get(restApiteamsPath);
+      //	      Files.createDirectories(targetteam.getParent());
+      //	      Files.copy(source, targetteam, StandardCopyOption.REPLACE_EXISTING);
+      //
+    } catch (IOException ex) {
+
+      ex.printStackTrace();
+    }
+  }
+
+  private void writefile(String operation, String path) {
+
+    try {
+      // Output file
+      // IpIpRelationship //API Name //API Version
+
+      String fileName =
+          "EC "
+              + context.swaggerContractInfo.getResourceName()
+              + " "
+              + operation
+              + " REST Service Contract "
+              + context.swaggerContractInfo.getVersion().replaceAll("\\.", "_")
+              + context.swaggerContractInfo.getDocumentVersion()
+              + ".xlsx";
+
+      FileOutputStream out = new FileOutputStream(path + File.separator + fileName);
+      wb.write(out);
+      out.close();
+
+      String restApiArtifactoryPath =
+          context.outputFolder
+              + File.separator
+              + "rest-api"
+              + File.separator
+              + "artifactory"
+              + File.separator
+              + "REST Services"
+              + File.separator
+              + context.swaggerContractInfo.getResourceName().toLowerCase()
+              + File.separator
+              + context.swaggerContractInfo.getVersion().trim().replaceAll("\\.", "_")
+              + File.separator
+              + fileName;
+
+      String restApiteamsPath =
+          context.outputFolder
+              + File.separator
+              + "rest-api"
+              + File.separator
+              + "teams"
+              + File.separator
+              + "REST Services"
+              + File.separator
+              + context.swaggerContractInfo.getResourceName().toLowerCase()
+              + File.separator
+              + context.swaggerContractInfo.getVersion().trim().replaceAll("\\.", "_")
+              + File.separator
+              + fileName;
+
+      java.nio.file.Path source = Paths.get(path + File.separator + fileName);
+      java.nio.file.Path target = Paths.get(restApiArtifactoryPath);
+      Files.createDirectories(target.getParent());
+      Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+
+      java.nio.file.Path targetteam = Paths.get(restApiteamsPath);
+      Files.createDirectories(targetteam.getParent());
+      Files.copy(source, targetteam, StandardCopyOption.REPLACE_EXISTING);
+
+    } catch (IOException ex) {
+
+      ex.printStackTrace();
+    }
+  }
+
+  private static String createfiller(int num) {
+    String val = "";
+    for (int i = 0; i <= num; i++) {
+      val = val + "   ";
+    }
+    return val;
+  }
+
+  private void processOperation(
+      Operation operation, List<Element> fieldList, String ecServiceName, boolean swaggerOnly) {
+
+    generateFieldDefinition(fieldList, ecServiceName, swaggerOnly);
+  }
+
+  private XSSFRow addSeperatorRow(XSSFCellStyle style, int totalColumns) {
+    XSSFRow row = s.createRow(rowNumber++);
+    int cellnum = 0;
+    for (int i = 0; i < totalColumns; i++) {
+      cellnum = createAndSetValueWithStyle(row, cellnum, "", style);
+    }
+    return row;
+  }
+
+  private XSSFRow addBusinessRulesSeperatorRow(XSSFCellStyle style) {
+    XSSFRow row = s.createRow(rowNumber++);
+    int cellnum = 0;
+    for (int i = 0; i < 4; i++) {
+      cellnum = createAndSetValueWithStyle(row, cellnum, "", style);
+    }
+    return row;
+  }
+
+  //  private void processPaths(String type) {
+  //    List<Path> pathList = context.swaggerContractInfo.getPaths();
+  //    boolean isHeaderNeeded = true;
+  //    for (Path path : pathList) {
+  //      row = s.createRow(rowNumber++);
+  //
+  //      List<Operation> operationsList = path.getOperations();
+  //      Map<String, List<Element>> opList = new HashMap();
+  //      for (Operation operation : operationsList) {
+  //
+  //        String ecServiceName = "";
+  //
+  //        if (operation.getType().equals(type)) {
+  //          switch (type) {
+  //            case "post":
+  //              opList = swaggerReader.postElementList;
+  //              if (context.serviceTypes.contains("Create")) {
+  //                ecServiceName =
+  //                    Context.COMPONENT_IDENTIFIER
+  //                        + "Create"
+  //                        + context.swaggerContractInfo.getEcRresourceName();
+  //              } else {
+  //                ecServiceName =
+  //                    Context.COMPONENT_IDENTIFIER
+  //                        + "Record"
+  //                        + context.swaggerContractInfo.getEcRresourceName();
+  //              }
+  //              break;
+  //            case "put":
+  //              opList = swaggerReader.putElementList;
+  //              ecServiceName =
+  //                  Context.COMPONENT_IDENTIFIER
+  //                      + "Record"
+  //                      + context.swaggerContractInfo.getEcRresourceName();
+  //              break;
+  //            case "get":
+  //              opList = swaggerReader.getElementList;
+  //              ecServiceName =
+  //                  Context.COMPONENT_IDENTIFIER
+  //                      + "Retrieve"
+  //                      + context.swaggerContractInfo.getEcRresourceName();
+  //              break;
+  //            case "delete":
+  //              opList = swaggerReader.deleteElementList;
+  //              ecServiceName =
+  //                  Context.COMPONENT_IDENTIFIER
+  //                      + "Record"
+  //                      + context.swaggerContractInfo.getEcRresourceName();
+  //              break;
+  //          }
+  //          // if (isHeaderNeeded) {
+  //          createAndSetValueWithStyle(row, 0, "Resource Path", csLable);
+  //          createAndSetValueWithStyle(row, 1, path.getPath(), csValue);
+  //          isHeaderNeeded = false;
+  //          // }
+  //
+  //          processOperation(operation, opList.get(path.getPath()), ecServiceName);
+  //          // addSeperatorRow(csHeading2);
+  //        }
+  //      }
+  //    }
+  //  }
+  //
+  //  public void generateDefinition() {
+  //
+  //    List<String> operationTypeList = new ArrayList();
+  //    List<String> operationExecutedList = new ArrayList();
+  //
+  //    List<Path> pathList = context.swaggerContractInfo.getPaths();
+  //
+  //    for (Path path : pathList) {
+  //      List<Operation> operationsList = path.getOperations();
+  //      for (Operation operation : operationsList) {
+  //        if (!operationTypeList.contains(operation.getType().toLowerCase())) {
+  //          operationTypeList.add(operation.getType().toLowerCase());
+  //        }
+  //      }
+  //    }
+  //
+  //    for (String operationType : operationTypeList) {
+  //
+  //      String apiName = context.swaggerContractInfo.getApiName();
+  //      String resourceName = apiName.substring(apiName.indexOf("/") + 1);
+  //
+  //      createNewWorkbook();
+  //
+  //      s = wb.getSheet("Cover Page");
+  //      generateAPIDefinition();
+  //      s = wb.createSheet(resourceName + " - " + operationType);
+  //      wb.setSheetOrder(s.getSheetName(), 1);
+  //
+  //      s.setColumnWidth(0, 20 * 256);
+  //      s.setColumnWidth(1, 25 * 256);
+  //      s.setColumnWidth(2, 25 * 256);
+  //      s.setColumnWidth(3, 35 * 256);
+  //      s.setColumnWidth(4, 19 * 256);
+  //      s.setColumnWidth(5, 14 * 256);
+  //      s.setColumnWidth(6, 19 * 256);
+  //      s.setColumnWidth(7, 30 * 256);
+  //      s.setColumnWidth(8, 30 * 256);
+  //      s.setColumnWidth(9, 30 * 256);
+  //      s.setColumnWidth(10, 30 * 256);
+  //      s.setColumnWidth(11, 15 * 256);
+  //      s.setColumnWidth(12, 30 * 256);
+  //
+  //      rowNumber = 0;
+  //
+  //      String ecServiceName = "";
+  //      switch (operationType) {
+  //        case "post":
+  //          if (context.serviceTypes.contains("Create")) {
+  //            ecServiceName =
+  //                Context.COMPONENT_IDENTIFIER
+  //                    + "Create"
+  //                    + context.swaggerContractInfo.getEcRresourceName();
+  //          } else {
+  //            ecServiceName =
+  //                Context.COMPONENT_IDENTIFIER
+  //                    + "Record"
+  //                    + context.swaggerContractInfo.getEcRresourceName();
+  //          }
+  //          break;
+  //        case "put":
+  //          ecServiceName =
+  //              Context.COMPONENT_IDENTIFIER
+  //                  + "Record"
+  //                  + context.swaggerContractInfo.getEcRresourceName();
+  //          break;
+  //        case "get":
+  //          ecServiceName =
+  //              Context.COMPONENT_IDENTIFIER
+  //                  + "Retrieve"
+  //                  + context.swaggerContractInfo.getEcRresourceName();
+  //          break;
+  //        case "delete":
+  //          ecServiceName =
+  //              Context.COMPONENT_IDENTIFIER
+  //                  + "Record"
+  //                  + context.swaggerContractInfo.getEcRresourceName();
+  //          break;
+  //      }
+  //
+  //      // System.out.println("Sheet Name:" + resourceName);
+  //      // wb.setSheetName(sheetcount, );
+  //      // generateAPIDefinition(ecServiceName);
+  //      processPaths(operationType);
+  //      if (context.serviceContractInfoMap.get(ecServiceName) != null) {
+  //        generateAdditionalBusinessRules(
+  //            context.serviceContractInfoMap.get(ecServiceName).getAdditionalBusinessRules());
+  //      }
+  //      if (!operationExecutedList.contains(operationType)) {
+  //        writefile(operationType);
+  //        operationExecutedList.add(operationType);
+  //      } else {
+  //        writefile(operationType + "-2");
+  //      }
+  //    }
+  //  }
+
+  private void processOperation(Path path, Operation operation, boolean swaggerOnly) {
+
+    String ecServiceName = "";
+    String type = operation.getType().toLowerCase();
+    Map<String, List<Element>> opList = new HashMap();
+    if (operation.getType().equals(type)) {
+      switch (type) {
+        case "post":
+          opList = swaggerReader.postElementList;
+          if (context.serviceTypes.contains("Create")) {
+            ecServiceName =
+                Context.COMPONENT_IDENTIFIER
+                    + "Create"
+                    + context.swaggerContractInfo.getEcRresourceName();
+          } else {
+            ecServiceName =
+                Context.COMPONENT_IDENTIFIER
+                    + "Record"
+                    + context.swaggerContractInfo.getEcRresourceName();
+          }
+          break;
+        case "put":
+          opList = swaggerReader.putElementList;
+          ecServiceName =
+              Context.COMPONENT_IDENTIFIER
+                  + "Record"
+                  + context.swaggerContractInfo.getEcRresourceName();
+          break;
+        case "get":
+          opList = swaggerReader.getElementList;
+          ecServiceName =
+              Context.COMPONENT_IDENTIFIER
+                  + "Retrieve"
+                  + context.swaggerContractInfo.getEcRresourceName();
+          break;
+        case "delete":
+          opList = swaggerReader.deleteElementList;
+          ecServiceName =
+              Context.COMPONENT_IDENTIFIER
+                  + "Record"
+                  + context.swaggerContractInfo.getEcRresourceName();
+          break;
+      }
+
+      processOperation(operation, opList.get(path.getPath()), ecServiceName, swaggerOnly);
+      // addSeperatorRow(csHeading2);
+    }
+  }
+
+  private void processBusinessRulesOperation(Path path, Operation operation, String ecServiceName) {
+
+    String type = operation.getType().toLowerCase();
+    Map<String, List<Element>> opList = new HashMap();
+    if (operation.getType().equals(type)) {
+      switch (type) {
+        case "post":
+          opList = swaggerReader.postElementList;
+          if (context.serviceTypes.contains("Create")) {
+            ecServiceName =
+                Context.COMPONENT_IDENTIFIER
+                    + "Create"
+                    + context.swaggerContractInfo.getEcRresourceName();
+          } else {
+            ecServiceName =
+                Context.COMPONENT_IDENTIFIER
+                    + "Record"
+                    + context.swaggerContractInfo.getEcRresourceName();
+          }
+          break;
+        case "put":
+          opList = swaggerReader.putElementList;
+          ecServiceName =
+              Context.COMPONENT_IDENTIFIER
+                  + "Record"
+                  + context.swaggerContractInfo.getEcRresourceName();
+          break;
+        case "get":
+          opList = swaggerReader.getElementList;
+          ecServiceName =
+              Context.COMPONENT_IDENTIFIER
+                  + "Retrieve"
+                  + context.swaggerContractInfo.getEcRresourceName();
+          break;
+        case "delete":
+          opList = swaggerReader.deleteElementList;
+          ecServiceName =
+              Context.COMPONENT_IDENTIFIER
+                  + "Record"
+                  + context.swaggerContractInfo.getEcRresourceName();
+          break;
+      }
+
+      processBusinessRulesOperation(opList.get(path.getPath()), ecServiceName);
+      // addSeperatorRow(csHeading2);
+    }
+  }
+
+  public void swaggerOnlyGenerateDefinition() {
+
+    List<String> operationExecutedList = new ArrayList();
+
+    List<Path> pathList = context.swaggerContractInfo.getPaths();
+    for (Path path : pathList) {
+
+      List<Operation> operationsList = path.getOperations();
+
+      for (Operation operation : operationsList) {
+
+        String operationType = operation.getType().toLowerCase();
+        String apiName = context.swaggerContractInfo.getApiName();
+        String sheetName = apiName.substring(apiName.indexOf(":") + 1).trim();
+
+        if (sheetName.indexOf(" REST") > 0) {
+          sheetName = sheetName.substring(0, sheetName.indexOf(" REST")).trim();
+        }
+
+        createNewWorkbook();
+
+        s = wb.getSheet("Cover Page");
+        swaggerOnlyGenerateAPIDefinition(operation, path);
+
+        // s = wb.createSheet(sheetName + "-" + operationType);
+        s = wb.createSheet("Definition");
+
+        wb.setSheetOrder(s.getSheetName(), 1);
+
+        s.setColumnWidth(0, 20 * 256);
+        s.setColumnWidth(1, 25 * 256);
+        s.setColumnWidth(2, 25 * 256);
+        s.setColumnWidth(3, 35 * 256);
+        s.setColumnWidth(4, 19 * 256);
+        s.setColumnWidth(5, 14 * 256);
+        s.setColumnWidth(6, 19 * 256);
+        s.setColumnWidth(7, 30 * 256);
+        s.setColumnWidth(8, 30 * 256);
+        s.setColumnWidth(9, 30 * 256);
+        s.setColumnWidth(10, 30 * 256);
+        s.setColumnWidth(11, 15 * 256);
+        s.setColumnWidth(12, 30 * 256);
+
+        s.createFreezePane(0, 1);
+
+        rowNumber = 0;
+
+        String ecServiceName = "";
+        switch (operationType) {
+          case "post":
+            if (context.serviceTypes.contains("Create")) {
+              ecServiceName =
+                  Context.COMPONENT_IDENTIFIER
+                      + "Create"
+                      + context.swaggerContractInfo.getEcRresourceName();
+            } else {
+              ecServiceName =
+                  Context.COMPONENT_IDENTIFIER
+                      + "Record"
+                      + context.swaggerContractInfo.getEcRresourceName();
+            }
+            break;
+          case "put":
+            ecServiceName =
+                Context.COMPONENT_IDENTIFIER
+                    + "Record"
+                    + context.swaggerContractInfo.getEcRresourceName();
+            break;
+          case "get":
+            ecServiceName =
+                Context.COMPONENT_IDENTIFIER
+                    + "Retrieve"
+                    + context.swaggerContractInfo.getEcRresourceName();
+            break;
+          case "delete":
+            ecServiceName =
+                Context.COMPONENT_IDENTIFIER
+                    + "Record"
+                    + context.swaggerContractInfo.getEcRresourceName();
+            break;
+        }
+
+        processOperation(path, operation, true);
+
+        s = wb.createSheet("Business Rules");
+
+        wb.setSheetOrder(s.getSheetName(), 2);
+
+        s.setColumnWidth(0, 30 * 256);
+        s.setColumnWidth(1, 30 * 256);
+        s.setColumnWidth(2, 15 * 256);
+        s.setColumnWidth(3, 30 * 256);
+
+        s.createFreezePane(0, 1);
+
+        rowNumber = 0;
+
+        processBusinessRulesOperation(path, operation, ecServiceName);
+
+        if (context.serviceContractInfoMap.get(ecServiceName) != null) {
+
+          addSeperatorRow(csHeading2, 13);
+
+          // generateAdditionalBusinessRulesHeaders();
+
+          // row = s.createRow(rowNumber++);
+
+          // generateAdditionalBusinessRules(
+          // context.serviceContractInfoMap.get(ecServiceName).getAdditionalBusinessRules());
+          // row = s.createRow(rowNumber++);
+        }
+
+        // String apiVersion = context.swaggerContractInfo.getVersion().trim(); // 2.1.5
+        // int index = apiVersion.indexOf(".");
+        // String resourceVersion = apiVersion.substring(0, index); // 2
+        //        String resourceNameLower =
+        //            context.swaggerContractInfo.getResourceName().toLowerCase(); // InvolvedParty
+        //
+        //        String ecResourceName = context.swaggerContractInfo.getEcRresourceName(); // Ip
+        //        String ecResourceNameLower = ecResourceName.toLowerCase(); // ip
+
+        // String v2 = "v" + resourceVersion;
+
+        String revisionHistoryTemplate =
+            classLoader.getResource("RESTRevisionHistoryTemplate.xlsx").getFile();
+
+        File revisionHistoryFile = new File(revisionHistoryTemplate);
+
+        s = wb.getSheet("Revision History");
+        //	        String jirastring = Context.jiraMap.get(ecResourceName);
+        //	        XSSFCell jiracell = s.getRow(1).getCell(3);
+        //	        if (jirastring == null || jirastring.isEmpty()) {
+        //	          jiracell.setCellValue("https://jira.fis.dev/browse/EPOCUST-36373");
+        //	        } else {
+        //	          jiracell.setCellValue(jirastring);
+        //	        }
+        //
+        //	        ServiceContrctInfo serviceContrctInfo =
+        // context.serviceContractInfoMap.get(ecServiceName);
+        //
+        // context.swaggerContractInfo.setDocumentVersion(serviceContrctInfo.getDocumentVersion());
+        //	        String revisionHistoryfileName = serviceContrctInfo.getSoapServiceContractPath();
+        //	        revisionHistoryfileName =
+        //	            revisionHistoryfileName.replace("Service Contract", "Revision History");
+        //
+        try {
+          XSSFWorkbook revisionHistorywb =
+              (XSSFWorkbook) WorkbookFactory.create(revisionHistoryFile);
+          XSSFSheet sheet = revisionHistorywb.getSheet("Revision History");
+          // wb.removeSheetAt(wb.getSheetIndex(s));
+          List<CellStyle> styleMap = new ArrayList<CellStyle>();
+          styleMap.add(csTableTitle);
+          styleMap.add(csHeading2);
+          PoiCopySheet.copySheet(sheet, s, styleMap);
+        } catch (InvalidFormatException | IOException e1) {
+          System.out.println("Error: Revision History copy failed.");
+        }
+
+        //	        String restApiPath = context.outputFolder + File.separator + REST_API;
+        //	        String resourcePath = restApiPath + File.separator + resourceNameLower;
+        //	        String versionPath = resourcePath + File.separator + v2;
+        //
+        //	        String codeConnectPath =
+        //	            versionPath
+        //	                + File.separator
+        //	                + "wso2"
+        //	                + File.separator
+        //	                + "Docs"
+        //	                + File.separator
+        //	                + "FileContents";
+        //	        createFolderStructure(codeConnectPath);
+
+        if (!operationExecutedList.contains(operationType)) {
+          swaggerOnlyWritefile(operationType, context.outputFolder);
+          operationExecutedList.add(operationType);
+        } else {
+          swaggerOnlyWritefile(operationType + "-2", context.outputFolder);
+        }
+      }
+    }
+  }
+
+  public void generateDefinition() {
+
+    List<String> operationExecutedList = new ArrayList();
+
+    List<Path> pathList = context.swaggerContractInfo.getPaths();
+    boolean isHeaderNeeded = true;
+    for (Path path : pathList) {
+
+      List<Operation> operationsList = path.getOperations();
+
+      for (Operation operation : operationsList) {
+
+        String operationType = operation.getType().toLowerCase();
+        String apiName = context.swaggerContractInfo.getApiName();
+        String sheetName = apiName.substring(apiName.indexOf(":") + 1).trim();
+
+        if (sheetName.indexOf(" REST") > 0) {
+          sheetName = sheetName.substring(0, sheetName.indexOf(" REST")).trim();
+        }
+
+        createNewWorkbook();
+
+        s = wb.getSheet("Cover Page");
+        generateAPIDefinition(operation, path);
+
+        // s = wb.createSheet(sheetName + "-" + operationType);
+        s = wb.createSheet("Definition & Business Rules");
+
+        wb.setSheetOrder(s.getSheetName(), 1);
+
+        s.setColumnWidth(0, 20 * 256);
+        s.setColumnWidth(1, 25 * 256);
+        s.setColumnWidth(2, 25 * 256);
+        s.setColumnWidth(3, 35 * 256);
+        s.setColumnWidth(4, 19 * 256);
+        s.setColumnWidth(5, 14 * 256);
+        s.setColumnWidth(6, 19 * 256);
+        s.setColumnWidth(7, 30 * 256);
+        s.setColumnWidth(8, 30 * 256);
+        s.setColumnWidth(9, 30 * 256);
+        s.setColumnWidth(10, 30 * 256);
+        s.setColumnWidth(11, 15 * 256);
+        s.setColumnWidth(12, 30 * 256);
+
+        s.createFreezePane(0, 1);
+
+        rowNumber = 0;
+
+        String ecServiceName = "";
+        switch (operationType) {
+          case "post":
+            if (context.serviceTypes.contains("Create")) {
+              ecServiceName =
+                  Context.COMPONENT_IDENTIFIER
+                      + "Create"
+                      + context.swaggerContractInfo.getEcRresourceName();
+            } else {
+              ecServiceName =
+                  Context.COMPONENT_IDENTIFIER
+                      + "Record"
+                      + context.swaggerContractInfo.getEcRresourceName();
+            }
+            break;
+          case "put":
+            ecServiceName =
+                Context.COMPONENT_IDENTIFIER
+                    + "Record"
+                    + context.swaggerContractInfo.getEcRresourceName();
+            break;
+          case "get":
+            ecServiceName =
+                Context.COMPONENT_IDENTIFIER
+                    + "Retrieve"
+                    + context.swaggerContractInfo.getEcRresourceName();
+            break;
+          case "delete":
+            ecServiceName =
+                Context.COMPONENT_IDENTIFIER
+                    + "Record"
+                    + context.swaggerContractInfo.getEcRresourceName();
+            break;
+        }
+
+        // System.out.println("Sheet Name:" + resourceName);
+        // wb.setSheetName(sheetcount, );
+        // generateAPIDefinition(ecServiceName);
+        processOperation(path, operation, false);
+        if (context.serviceContractInfoMap.get(ecServiceName) != null) {
+
+          addSeperatorRow(csHeading2, 13);
+
+          generateAdditionalBusinessRulesHeaders();
+
+          row = s.createRow(rowNumber++);
+
+          generateAdditionalBusinessRules(
+              context.serviceContractInfoMap.get(ecServiceName).getAdditionalBusinessRules());
+          row = s.createRow(rowNumber++);
+        }
+
+        String apiVersion = context.swaggerContractInfo.getVersion().trim(); // 2.1.5
+        int index = apiVersion.indexOf(".");
+        String resourceVersion = apiVersion.substring(0, index); // 2
+        String resourceNameLower =
+            context.swaggerContractInfo.getResourceName().toLowerCase(); // InvolvedParty
+
+        String ecResourceName = context.swaggerContractInfo.getEcRresourceName(); // Ip
+        String ecResourceNameLower = ecResourceName.toLowerCase(); // ip
+
+        String v2 = "v" + resourceVersion;
+        // String codeConnect = "wso2";
+
+        s = wb.getSheet("Revision History");
+        String jirastring = Context.jiraMap.get(ecResourceName);
+        XSSFCell jiracell = s.getRow(1).getCell(3);
+        if (jirastring == null || jirastring.isEmpty()) {
+          jiracell.setCellValue("https://jira.fis.dev/browse/EPOCUST-36373");
+        } else {
+          jiracell.setCellValue(jirastring);
+        }
+
+        ServiceContrctInfo serviceContrctInfo = context.serviceContractInfoMap.get(ecServiceName);
+        context.swaggerContractInfo.setDocumentVersion(serviceContrctInfo.getDocumentVersion());
+        String revisionHistoryfileName = serviceContrctInfo.getSoapServiceContractPath();
+        revisionHistoryfileName =
+            revisionHistoryfileName.replace("Service Contract", "Revision History");
+
+        File revisionHistoryfile = new File(revisionHistoryfileName);
+        try {
+          XSSFWorkbook revisionHistorywb =
+              (XSSFWorkbook) WorkbookFactory.create(revisionHistoryfile);
+          XSSFSheet sheet = revisionHistorywb.getSheet("Revision History");
+          // wb.removeSheetAt(wb.getSheetIndex(s));
+          List<CellStyle> styleMap = new ArrayList<CellStyle>();
+          styleMap.add(csTableTitle);
+          styleMap.add(csHeading2);
+          PoiCopySheet.copySheet(sheet, s, styleMap);
+        } catch (InvalidFormatException | IOException e1) {
+          // No revision History found
+          System.out.println(
+              "Error: No revision history file found for:"
+                  + serviceContrctInfo.getSoapServiceContractPath());
+        }
+
+        String restApiPath = context.outputFolder + File.separator + REST_API;
+        String resourcePath = restApiPath + File.separator + resourceNameLower;
+        String versionPath = resourcePath + File.separator + v2;
+
+        String codeConnectPath =
+            versionPath
+                + File.separator
+                + "wso2"
+                + File.separator
+                + "Docs"
+                + File.separator
+                + "FileContents";
+        createFolderStructure(codeConnectPath);
+
+        if (!operationExecutedList.contains(operationType)) {
+          writefile(operationType, codeConnectPath);
+          operationExecutedList.add(operationType);
+        } else {
+          writefile(operationType + "-2", codeConnectPath);
+        }
+      }
+    }
+  }
+
+  private void createFolderStructure(String codeConnect) {
+    java.nio.file.Path codeConnPath = Paths.get(codeConnect);
+
+    if (!Files.exists(codeConnPath)) {
+      try {
+        Files.createDirectories(codeConnPath);
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+    }
+  }
+
+  public void generateMissingFieldsBusinessRulesHeaders() {
+    row = s.createRow(rowNumber++);
+    //		row = s.createRow(rowNumber++);
+    createAndSetValueWithStyle(row, 0, "Additional Fields Business Rules", csAggregate);
+    createAndSetValueWithStyle(row, 1, "", csAggregate);
+    createAndSetValueWithStyle(row, 2, "", csAggregate);
+    createAndSetValueWithStyle(row, 3, "", csAggregate);
+    s.addMergedRegion(new CellRangeAddress(row.getRowNum(), row.getRowNum(), 0, 3));
+    row = s.createRow(rowNumber++);
+
+    int cellnum = 0;
+
+    cellnum = createAndSetValueWithStyle(row, cellnum++, "Business Name", csTableTitle);
+    cellnum = createAndSetValueWithStyle(row, cellnum++, "Business Rule", csTableTitle);
+    cellnum = createAndSetValueWithStyle(row, cellnum++, "Message Number", csTableTitle);
+    cellnum = createAndSetValueWithStyle(row, cellnum++, "Message Text", csTableTitle);
+  }
+
+  public void generateAdditionalBusinessRulesHeaders() {
+    row = s.createRow(rowNumber++);
+    //		row = s.createRow(rowNumber++);
+    createAndSetValueWithStyle(row, 0, "Additional Business Rules", csAggregate);
+    createAndSetValueWithStyle(row, 1, "", csAggregate);
+    createAndSetValueWithStyle(row, 2, "", csAggregate);
+    s.addMergedRegion(new CellRangeAddress(row.getRowNum(), row.getRowNum(), 0, 2));
+    row = s.createRow(rowNumber++);
+
+    int cellnum = 0;
+
+    cellnum = createAndSetValueWithStyle(row, cellnum++, "Business Rule", csTableTitle);
+    cellnum = createAndSetValueWithStyle(row, cellnum++, "Message Number", csTableTitle);
+    cellnum = createAndSetValueWithStyle(row, cellnum++, "Message Text", csTableTitle);
+  }
+
+  public void generateAdditionalBusinessRules(List<BusinessRuleInfo> additionalBusinessRules) {
+
+    int cellnum = 0;
+
+    for (BusinessRuleInfo businessRuleInfo : additionalBusinessRules) {
+      row = s.createRow(rowNumber++);
+      cellnum = 0;
+
+      cellnum =
+          createAndSetValueWithStyle(
+              row, cellnum, shortToFullNames(businessRuleInfo.getBusinessRule()), csValue);
+      cellnum =
+          createAndSetValueWithStyle(row, cellnum, businessRuleInfo.getMessageNumber(), csValue);
+      cellnum =
+          createAndSetValueWithStyle(row, cellnum, businessRuleInfo.getMessageText(), csValue);
+    }
+  }
+
+  static String splitCamelCase(String s) {
+    return s.replaceAll(
+        String.format(
+            "%s|%s|%s",
+            "(?<=[A-Z])(?=[A-Z][a-z])", "(?<=[^A-Z])(?=[A-Z])", "(?<=[A-Za-z])(?=[^A-Za-z])"),
+        " ");
+  }
+
+  public String shortToFullNames(String businessRules) {
+
+    String[] lineSections = businessRules.split(Pattern.quote("("));
+    int i = 0;
+    for (String lineSection : lineSections) {
+      String[] lineSubSections = lineSection.split(Pattern.quote(")"));
+      int j = 0;
+      for (String lineSubSection : lineSubSections) {
+        String[] pathSections = lineSubSection.split(Pattern.quote("/"));
+        int k = 0;
+        for (String pathSection : pathSections) {
+          String newPath = this.context.shortToFullNameMap.get(pathSection);
+          if (newPath != null) {
+            pathSections[k] = newPath;
+          }
+          k++;
+        }
+        lineSubSections[j] = String.join("/", pathSections);
+        j++;
+      }
+      lineSections[i] = String.join(")", lineSubSections);
+      i++;
+    }
+    String resultString = String.join("(", lineSections);
+    //    System.out.println(businessRules);
+    //    System.out.println(resultString);
+    return resultString;
+  }
+
+  public void swaggerOnlyGenerateAPIDefinition(Operation operation, Path path) {
+
+    String copyRight = "Copyright© 2021 FIS™ and/or its subsidiaries. All Rights Reserved.";
+    String copyRight2 =
+        "This software documentation manual has been provided pursuant to a license agreement containing restrictions on its use. This document contains confidential and trade secret information of FIS and/or its subsidiaries and is protected by Federal copyright law. It may not be copied or distributed in any form or medium, disclosed to third parties, or used in any manner not authorized in said license agreement except with prior written authorization from FIS.";
+
+    int rowNum = 3;
+
+    String apiTitle = context.swaggerContractInfo.getApiName();
+    String operationName = operation.getName();
+
+    String ecResourceName = operationName.replace("get", "");
+    ecResourceName = ecResourceName.replace("manage", "");
+    ecResourceName = ecResourceName.replace("create", "");
+    ecResourceName = ecResourceName.replace("search", "");
+
+    if (ecResourceName.endsWith("s")) {
+      if (!apiTitle.endsWith("s")) {
+        ecResourceName = ecResourceName.substring(0, ecResourceName.length() - 1);
+      }
+    }
+
+    context.swaggerContractInfo.setEcRresourceName(ecResourceName);
+
+    context.swaggerContractInfo.setResourceName(
+        context.resolveToAPIName(context.swaggerContractInfo.getEcRresourceName()));
+    context.swaggerContractInfo.setResourceBusinessName(
+        context.resolveToBusinessName(context.swaggerContractInfo.getEcRresourceName()));
+
+    String ecOperationName = resolveOperationName(operation.getType(), true); // Retrieve
+    String ecServiceName =
+        Context.COMPONENT_IDENTIFIER
+            + ecOperationName
+            + context.swaggerContractInfo.getEcRresourceName();
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "API Title", csLable);
+    createAndSetValueWithStyle(row, 2, context.swaggerContractInfo.getApiName(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "API Version", csLable);
+    createAndSetValueWithStyle(row, 2, context.swaggerContractInfo.getVersion(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Document Version", csLable);
+    createAndSetValueWithStyle(row, 2, context.swaggerContractInfo.getVersion(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "API Description", csLable);
+    createAndSetValueWithStyle(row, 2, context.swaggerContractInfo.getDescription(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Resource Name", csLable);
+    createAndSetValueWithStyle(row, 2, context.swaggerContractInfo.getResourceName(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Operation Name", csLable);
+    createAndSetValueWithStyle(row, 2, operation.getName(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Operation Description", csLable);
+    createAndSetValueWithStyle(row, 2, operation.getDescription(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Operation Summary", csLable);
+    createAndSetValueWithStyle(row, 2, operation.getSummary(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Operation Type", csLable);
+    createAndSetValueWithStyle(row, 2, operation.getType(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Operation Path", csLable);
+    createAndSetValueWithStyle(row, 2, path.getPath(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Server URL", csLable);
+    createAndSetValueWithStyle(row, 2, context.swaggerContractInfo.getServerUrl(), csValue);
+
+    //    String ecServiceVersion =
+    //        context.serviceContractInfoMap.get(ecServiceName).getServiceVersion().trim();
+    //
+    //
+    //    String jirastring = "";
+    //    if (ecServiceName.endsWith("ExtendedAttribute")) {
+    //      jirastring = Context.jiraMap.get(ecServiceName);
+    //    } else {
+    //      jirastring =
+    //
+    // Context.jiraMap.get(Context.resolveECServiceNameToActualECServiceName(ecServiceName));
+    //    }
+
+    //    String apiInfo =
+    //        "OperationInfo|"
+    //            + Context.resolveECServiceNameToActualECServiceName(ecServiceName)
+    //            + "|"
+    //            + ecServiceVersion
+    //            + "|"
+    //            + operation.getName()
+    //            + "|"
+    //            + context.swaggerContractInfo.getResourceName()
+    //            + "|"
+    //            + context.swaggerContractInfo.getVersion()
+    //            + "|"
+    //            + operation.getType()
+    //            + "|"
+    //            + context.swaggerContractInfo.getServerUrl()
+    //            + "|"
+    //            // + "|http://localhost:8080/EnterpriseCustomerServices/rest/core/customer/v2"
+    //            + path.getPath()
+    //            + "|"
+    //            + operation.getDescription()
+    //            + "|"
+    //            + jirastring;
+
+    System.out.println(
+        Context.resolveECServiceNameToActualECServiceName(ecServiceName)
+            + ".RESOURCE_PATH_PARAM="
+            + path.getPath());
+
+    //    MainGenerator.apiList.add(apiInfo);
+    //    System.out.println(apiInfo);
+
+    String apiName = context.swaggerContractInfo.getApiName();
+    apiName = apiName.substring(19, apiName.length()).trim();
+    // String swaggerHubApiName = apiName.toLowerCase().replaceAll(" ", "_");
+    //    System.out.println(
+    //        "API C4E Support,"
+    //            + "API Specification Checklist Review,"
+    //            + "3 - Average,"
+    //            + "Please review this API details provided.,"
+    //            + context.swaggerContractInfo.getApiName()
+    //            + ",,"
+    //            + "API Checklist Review Request - medapi.lob: "
+    //            + context.swaggerContractInfo.getResourceName().toLowerCase()
+    //            + " - "
+    //            + context.swaggerContractInfo.getVersion()
+    //            + ","
+    //            + context.swaggerContractInfo.getVersion()
+    //            + ",EC,"
+    //            + "Silver,"
+    //            + "Team,"
+    //            + "ECRESTAPI-group,"
+    //            + "9549,"
+    //            + "REST,"
+    //            + "New API and New API group,"
+    //            + "30/12/2021 12:00,"
+    //            + "https://swaggerhub.fisdev.local/apis/FIS_Org/"
+    //            + swaggerHubApiName
+    //            + "/"
+    //            + context.swaggerContractInfo.getVersion()
+    //            + ","
+    //            + context
+    //                .swaggerContractInfo
+    //                .getServerUrl()
+    //                .substring(14, context.swaggerContractInfo.getServerUrl().length())
+    //            + ",,"
+    //            + context.swaggerContractInfo.getDescription().replaceAll(",", ";")
+    //            + ","
+    //            + apiName
+    //            + ",Banking,"
+    //            + "ECRESTAPI-group,"
+    //            + "Please review this API details provided.,"
+    //            + "System,"
+    //            + "Banking Solutions Leveraged Services,"
+    //            + "Upcoming,"
+    //            + "Banking,"
+    //            + "Not Applicable,");
+
+    // Following is for API group review
+
+    apiName = context.swaggerContractInfo.getApiName();
+    int ecindex = apiName.indexOf("Enterprise Customer: ");
+    if (ecindex >= 0) {
+      apiName = apiName.substring(ecindex + "Enterprise Customer: ".length(), apiName.length());
+    }
+
+    String apiNameWithSpace = apiName.toLowerCase();
+    apiName = apiName.replaceAll(" To ", "-to-");
+    apiName = apiName.replaceAll(" to ", "-to-");
+    apiName = apiName.replaceAll(" Of ", " of ");
+    apiName = apiName.replaceAll(" And ", " and ");
+    apiName = apiName.replaceAll(" For ", " for ");
+    apiName = apiName.replaceAll(" Relationship Maintenance History", " Maintenance History");
+    apiName = apiName.replaceAll(" Maintenance History", " Maint Hist");
+    apiName =
+        apiName.replaceAll(" Relationship Communication Preference", " Communication Preference");
+    apiName = apiName.replaceAll(" Communication Preference", " Comm Pref");
+    apiName =
+        apiName.replaceAll(" Relationship Point of Contact Preference", " Point of Contact Pref");
+    apiName = apiName.replaceAll("IP-to-AR", "Involved Party-to-Arrangement");
+    apiName = apiName.replaceAll(" Point of Contact Pref Maint Hist", " POC Pref Maint Hist");
+
+    if (apiName.length() > 60) {
+      System.out.println("Error: API LongName Issue:" + apiName + " length:" + apiName.length());
+    }
+
+    String apiDescription = context.swaggerContractInfo.getDescription();
+    if (apiDescription.length() > 100) {
+      System.out.println(
+          "Error: API Long Description Issue:"
+              + apiDescription
+              + " length:"
+              + apiDescription.length());
+    }
+
+    apiDescription = apiDescription.toLowerCase();
+    apiDescription = apiDescription.replaceAll(apiNameWithSpace, apiName.toLowerCase());
+    apiDescription = apiDescription.substring(0, 1).toUpperCase() + apiDescription.substring(1);
+    apiDescription = apiDescription.replaceAll(" fatca ", " FATCA ");
+    apiDescription =
+        apiDescription.replaceAll(" in enterprise customer ", " in Enterprise Customer");
+
+    if (apiDescription.endsWith(".")) {
+      apiDescription = apiDescription.substring(0, apiDescription.length() - 1);
+    }
+    // System.out.println("API Catalog Review," + apiName + "," + apiDescription);
+    //    String reviewRequestText =
+    //        "API Catalog Review Request - EnterpiseCustomer-"
+    //            + apiName
+    //            + " - "
+    //            + context.swaggerContractInfo.getVersion();
+
+    //    System.out.println(
+    //        "API C4E Support,"
+    //            + "API Catalog Review,"
+    //            + "3 - Average,"
+    //            + reviewRequestText
+    //            + ",e1032956,"
+    //            + reviewRequestText
+    //            + ",Michelle Henrich,"
+    //            + "Banking,"
+    //            + "Banking,"
+    //            + context.swaggerContractInfo.getVersion()
+    //            + ",EC,"
+    //            + "Silver,"
+    //            + "Team,"
+    //            + "Banking Solutions Leveraged Services,"
+    //            + "Comprehensive solution for customer (Party) information management across lines
+    // of businesses of a Financial Institution (FE). Capabilities include Customer Master Data
+    // Management; Data Governance; 360 Overview and Data Synchronization with other FE solutions.,"
+    //            + reviewRequestText
+    //            + ",ECRESTAPI-group,"
+    //            + "Customer (Enterprise Customer) REST,"
+    //            + "System,"
+    //            + "Customer functions (REST) for Modern Banking Platform,"
+    //            + "Banking,"
+    //            + "Banking,"
+    //            + "Banking,"
+    //            + apiName
+    //            + ","
+    //            + apiDescription
+    //            + ",9549,"
+    //            + "REST,"
+    //            + "Upcoming,"
+    //            + "New API and New API group,"
+    //            + "01/12/2022 12:00,");
+    //
+    //    serviceContrctInfo = context.serviceContractInfoMap.get(ecServiceName);
+    //    System.out.println(
+    //        "ServiceInfo-,"
+    //            + context.swaggerContractInfo.getResourceName().toLowerCase()
+    //            + ","
+    //            + serviceContrctInfo.getServiceDescription()
+    //            + ","
+    //            + apiDescription
+    //            + ","
+    //            + context.swaggerContractInfo.getServerUrl()
+    //            + ","
+    //            + path.getPath()
+    //            + ","
+    //            + serviceContrctInfo.getPurpose());
+
+    row = s.createRow(rowNum++);
+    row = s.createRow(rowNum++);
+    row = s.createRow(rowNum++);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 2, copyRight, csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 2, copyRight2, csValue);
+    row = s.createRow(rowNum++);
+  }
+
+  public void generateAPIDefinition(Operation operation, Path path) {
+
+    String copyRight = "Copyright© 2021 FIS™ and/or its subsidiaries. All Rights Reserved.";
+    String copyRight2 =
+        "This software documentation manual has been provided pursuant to a license agreement containing restrictions on its use. This document contains confidential and trade secret information of FIS and/or its subsidiaries and is protected by Federal copyright law. It may not be copied or distributed in any form or medium, disclosed to third parties, or used in any manner not authorized in said license agreement except with prior written authorization from FIS.";
+
+    int rowNum = 3;
+
+    String ecOperationName = resolveOperationName(operation.getType(), true); // Retrieve
+    String ecServiceName =
+        Context.COMPONENT_IDENTIFIER
+            + ecOperationName
+            + context.swaggerContractInfo.getEcRresourceName();
+
+    ServiceContrctInfo serviceContrctInfo = context.serviceContractInfoMap.get(ecServiceName);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "API Title", csLable);
+    createAndSetValueWithStyle(row, 2, context.swaggerContractInfo.getApiName(), csValue);
+
+    //    row = s.createRow(rowNum++);
+    //    createAndSetValueWithStyle(row, 1, "API Description", csLable);
+    //    createAndSetValueWithStyle(row, 2, context.swaggerContractInfo.getDescription(), csValue);
+
+    //		row = s.createRow(rowNumber++);
+    //		createAndSetValueWithStyle(row, 0, "API Purpose", csLable);
+    //		createAndSetValueWithStyle(row, 1,
+    // context.serviceContractInfoMap.get(ecServiceName).getPurpose(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "API Version", csLable);
+    createAndSetValueWithStyle(row, 2, context.swaggerContractInfo.getVersion(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Document Version", csLable);
+    createAndSetValueWithStyle(
+        row,
+        2,
+        context.swaggerContractInfo.getVersion() + serviceContrctInfo.getDocumentVersion(),
+        csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "API Description", csLable);
+    createAndSetValueWithStyle(row, 2, context.swaggerContractInfo.getDescription(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Resource Name", csLable);
+    createAndSetValueWithStyle(row, 2, context.swaggerContractInfo.getResourceName(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Operation Name", csLable);
+    createAndSetValueWithStyle(row, 2, operation.getName(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Operation Description", csLable);
+    createAndSetValueWithStyle(row, 2, operation.getDescription(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Operation Summary", csLable);
+    createAndSetValueWithStyle(row, 2, operation.getSummary(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Operation Type", csLable);
+    createAndSetValueWithStyle(row, 2, operation.getType(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Operation Path", csLable);
+    createAndSetValueWithStyle(row, 2, path.getPath(), csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 1, "Server URL", csLable);
+    createAndSetValueWithStyle(row, 2, context.swaggerContractInfo.getServerUrl(), csValue);
+
+    if (serviceContrctInfo.getAdaptorEventInfoField() != null
+        && serviceContrctInfo.getAdaptorEventInfoValue() != null) {
+      row = s.createRow(rowNum++);
+      for (int i = 0; i < serviceContrctInfo.getAdaptorEventInfoField().size(); i++) {
+        String fieldName = serviceContrctInfo.getAdaptorEventInfoField().get(i);
+        String fieldValue = serviceContrctInfo.getAdaptorEventInfoValue().get(i);
+
+        row = s.createRow(rowNum++);
+        if (!fieldName.isEmpty()) {
+          createAndSetValueWithStyle(row, 1, fieldName, csLable);
+        }
+        if (fieldValue.contains("SPLITHERE")) {
+          s.setColumnWidth(3, 30 * 256);
+          createAndSetValueWithStyle(row, 2, fieldValue.split("SPLITHERE")[0], csValue);
+          createAndSetValueWithStyle(row, 3, fieldValue.split("SPLITHERE")[1], csValue);
+        } else {
+          createAndSetValueWithStyle(row, 2, fieldValue, csValue);
+        }
+      }
+    }
+
+    String ecServiceVersion =
+        context.serviceContractInfoMap.get(ecServiceName).getServiceVersion().trim();
+
+    // http://localhost:8080/EnterpriseCustomerServices/rest/core
+
+    String jirastring = "";
+    if (ecServiceName.endsWith("ExtendedAttribute")) {
+      jirastring = Context.jiraMap.get(ecServiceName);
+    } else {
+      jirastring =
+          Context.jiraMap.get(Context.resolveECServiceNameToActualECServiceName(ecServiceName));
+    }
+
+    String apiInfo =
+        "OperationInfo|"
+            + Context.resolveECServiceNameToActualECServiceName(ecServiceName)
+            + "|"
+            + ecServiceVersion
+            + "|"
+            + operation.getName()
+            + "|"
+            + context.swaggerContractInfo.getResourceName()
+            + "|"
+            + context.swaggerContractInfo.getVersion()
+            + "|"
+            + operation.getType()
+            + "|"
+            + context.swaggerContractInfo.getServerUrl()
+            + "|"
+            // + "|http://localhost:8080/EnterpriseCustomerServices/rest/core/customer/v2"
+            + path.getPath()
+            + "|"
+            + operation.getDescription()
+            + "|"
+            + jirastring;
+
+    System.out.println(
+        Context.resolveECServiceNameToActualECServiceName(ecServiceName)
+            + ".RESOURCE_PATH_PARAM="
+            + path.getPath());
+
+    MainGenerator.apiList.add(apiInfo);
+    System.out.println(apiInfo);
+
+    String apiName = context.swaggerContractInfo.getApiName();
+    apiName = apiName.substring(19, apiName.length()).trim();
+    String swaggerHubApiName = apiName.toLowerCase().replaceAll(" ", "_");
+    System.out.println(
+        "API C4E Support,"
+            + "API Specification Checklist Review,"
+            + "3 - Average,"
+            + "Please review this API details provided.,"
+            + context.swaggerContractInfo.getApiName()
+            + ",,"
+            + "API Checklist Review Request - medapi.lob: "
+            + context.swaggerContractInfo.getResourceName().toLowerCase()
+            + " - "
+            + context.swaggerContractInfo.getVersion()
+            + ","
+            + context.swaggerContractInfo.getVersion()
+            + ",EC,"
+            + "Silver,"
+            + "Team,"
+            + "ECRESTAPI-group,"
+            + "9549,"
+            + "REST,"
+            + "New API and New API group,"
+            + "30/12/2021 12:00,"
+            + "https://swaggerhub.fisdev.local/apis/FIS_Org/"
+            + swaggerHubApiName
+            + "/"
+            + context.swaggerContractInfo.getVersion()
+            + ","
+            + context
+                .swaggerContractInfo
+                .getServerUrl()
+                .substring(14, context.swaggerContractInfo.getServerUrl().length())
+            + ",,"
+            + context.swaggerContractInfo.getDescription().replaceAll(",", ";")
+            + ","
+            + apiName
+            + ",Banking,"
+            + "ECRESTAPI-group,"
+            + "Please review this API details provided.,"
+            + "System,"
+            + "Banking Solutions Leveraged Services,"
+            + "Upcoming,"
+            + "Banking,"
+            + "Not Applicable,");
+
+    // Following is for API group review
+
+    String resourceName = context.swaggerContractInfo.getResourceName(); // InvolvedParty
+    String resourceBusinessName = context.swaggerContractInfo.getResourceBusinessName();
+    apiName = context.swaggerContractInfo.getApiName();
+    int ecindex = apiName.indexOf("EnterpriseCustomer: ");
+    if (ecindex >= 0) {
+      apiName = apiName.substring(ecindex + "EnterpriseCustomer: ".length(), apiName.length());
+    }
+
+    String apiNameWithSpace = apiName.toLowerCase();
+    apiName = apiName.replaceAll(" To ", "-to-");
+    apiName = apiName.replaceAll(" to ", "-to-");
+    apiName = apiName.replaceAll(" Of ", " of ");
+    apiName = apiName.replaceAll(" And ", " and ");
+    apiName = apiName.replaceAll(" For ", " for ");
+    apiName = apiName.replaceAll(" Relationship Maintenance History", " Maintenance History");
+    apiName = apiName.replaceAll(" Maintenance History", " Maint Hist");
+    apiName =
+        apiName.replaceAll(" Relationship Communication Preference", " Communication Preference");
+    apiName = apiName.replaceAll(" Communication Preference", " Comm Pref");
+    apiName =
+        apiName.replaceAll(" Relationship Point of Contact Preference", " Point of Contact Pref");
+    apiName = apiName.replaceAll("IP-to-AR", "Involved Party-to-Arrangement");
+    apiName = apiName.replaceAll(" Point of Contact Pref Maint Hist", " POC Pref Maint Hist");
+
+    if (apiName.length() > 60) {
+      System.out.println("Error: API LongName Issue:" + apiName + " length:" + apiName.length());
+    }
+
+    String apiDescription = context.swaggerContractInfo.getDescription();
+    if (apiDescription.length() > 100) {
+      System.out.println(
+          "Error: API Long Description Issue:"
+              + apiDescription
+              + " length:"
+              + apiDescription.length());
+    }
+
+    apiDescription = apiDescription.toLowerCase();
+    apiDescription = apiDescription.replaceAll(apiNameWithSpace, apiName.toLowerCase());
+    apiDescription = apiDescription.substring(0, 1).toUpperCase() + apiDescription.substring(1);
+    apiDescription = apiDescription.replaceAll(" fatca ", " FATCA ");
+    apiDescription =
+        apiDescription.replaceAll(" in enterprise customer ", " in Enterprise Customer");
+
+    if (apiDescription.endsWith(".")) {
+      apiDescription = apiDescription.substring(0, apiDescription.length() - 1);
+    }
+    // System.out.println("API Catalog Review," + apiName + "," + apiDescription);
+    String reviewRequestText =
+        "API Catalog Review Request - EnterpiseCustomer-"
+            + apiName
+            + " - "
+            + context.swaggerContractInfo.getVersion();
+
+    System.out.println(
+        "API C4E Support,"
+            + "API Catalog Review,"
+            + "3 - Average,"
+            + reviewRequestText
+            + ",e1032956,"
+            + reviewRequestText
+            + ",Michelle Henrich,"
+            + "Banking,"
+            + "Banking,"
+            + context.swaggerContractInfo.getVersion()
+            + ",EC,"
+            + "Silver,"
+            + "Team,"
+            + "Banking Solutions Leveraged Services,"
+            + "Comprehensive solution for customer (Party) information management across lines of businesses of a Financial Institution (FE). Capabilities include Customer Master Data Management; Data Governance; 360 Overview and Data Synchronization with other FE solutions.,"
+            + reviewRequestText
+            + ",ECRESTAPI-group,"
+            + "Customer (Enterprise Customer) REST,"
+            + "System,"
+            + "Customer functions (REST) for Modern Banking Platform,"
+            + "Banking,"
+            + "Banking,"
+            + "Banking,"
+            + apiName
+            + ","
+            + apiDescription
+            + ",9549,"
+            + "REST,"
+            + "Upcoming,"
+            + "New API and New API group,"
+            + "01/12/2022 12:00,");
+
+    serviceContrctInfo = context.serviceContractInfoMap.get(ecServiceName);
+    System.out.println(
+        "ServiceInfo-,"
+            + context.swaggerContractInfo.getResourceName().toLowerCase()
+            + ","
+            + serviceContrctInfo.getServiceDescription()
+            + ","
+            + apiDescription
+            + ","
+            + context.swaggerContractInfo.getServerUrl()
+            + ","
+            + path.getPath()
+            + ","
+            + serviceContrctInfo.getPurpose());
+
+    row = s.createRow(rowNum++);
+    row = s.createRow(rowNum++);
+    row = s.createRow(rowNum++);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 2, copyRight, csValue);
+
+    row = s.createRow(rowNum++);
+    createAndSetValueWithStyle(row, 2, copyRight2, csValue);
+    row = s.createRow(rowNum++);
+  }
+
+  public String resolveOperationName(String operationType, boolean isEC) {
+
+    String operationName = "";
+    switch (operationType) {
+      case "post":
+        if (context.serviceTypes.contains("Create") || !isEC) {
+          operationName = "Create";
+        } else {
+          operationName = "Record";
+        }
+        break;
+      case "put":
+        operationName = "Record";
+        break;
+      case "get":
+        operationName = "Retrieve";
+        break;
+      case "delete":
+        if (isEC) {
+          operationName = "Record";
+        } else {
+          operationName = "Delete";
+        }
+        break;
+      default:
+    }
+    return operationName;
+  }
+
+  /**
+   * This method calls SchemaCompareLoad to get elements information of a given schema and generates
+   * service definition tab.
+   *
+   * @param wb
+   * @param schema
+   * @param messageName
+   */
+  public void generateFieldDefinition(
+      List<Element> mfList, String ecServiceName, boolean swaggerOnly) {
+    try {
+
+      boolean islastcomplex = true;
+
+      List<String> fieldsProcessedForBusinessRules = new ArrayList();
+
+      // Create header elements
+      row = s.createRow(rowNumber++);
+
+      int cellnum = 0;
+      cellnum = createAndSetValueWithStyle(row, cellnum, "Field Location", csTableTitle);
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "Field Name", csTableTitle);
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "Business Name", csTableTitle);
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "Business Description", csTableTitle);
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "Type", csTableTitle);
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "TypeQualifier", csTableTitle);
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "Required", csTableTitle);
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "Valid Value", csTableTitle);
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "Example", csTableTitle);
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "Path", csTableTitle);
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "Comment", csTableTitle);
+
+      if (!swaggerOnly) {
+        cellnum = createAndSetValueWithStyle(row, cellnum++, "SOAP Path", csTableTitle);
+        cellnum = createAndSetValueWithStyle(row, cellnum++, "Business Rule", csTableTitle);
+        cellnum = createAndSetValueWithStyle(row, cellnum++, "Message Number", csTableTitle);
+        cellnum = createAndSetValueWithStyle(row, cellnum++, "Message Text", csTableTitle);
+      }
+      cellnum = 0;
+      boolean inputSeperatorDone = false;
+      boolean outputSeperatorDone = false;
+
+      // sheetrownum =1;
+      for (Element element : mfList) {
+        if (element.getFunctionalDesc() == null) {
+          element.setFunctionalDesc("");
+        }
+
+        if (element.getLocation().equals("Input") && !inputSeperatorDone) {
+          addSeperatorRow(csSubHeading1, 13);
+          inputSeperatorDone = true;
+        }
+        if (element.getLocation().equals("Output") && !outputSeperatorDone) {
+          addSeperatorRow(csSubHeading1, 13);
+          outputSeperatorDone = true;
+        }
+
+        row = s.createRow(rowNumber++);
+        cellnum = 0;
+        if (element.isComplexType()) {
+          spacecount++;
+          islastcomplex = true;
+        }
+        if (element.isComplexType()) {}
+
+        if (element.getElementTag().startsWith("/")) {
+          spacecount--;
+        }
+        // if (mfList.get(rownum).getElementType().equals("")
+        // || mfList.get(rownum).isComplexType()
+        // || mfList.get(rownum).getElementType() == null)
+        // {
+        // continue;
+        // }
+
+        XSSFCellStyle changeCS = csValue;
+
+        boolean isAggregate = false;
+        // if (mfList.get(rownum).getElementType().equals("")
+        // || mfList.get(rownum).getElementType().startsWith(AGGREGATE)
+        // || mfList.get(rownum).getElementType() == null)
+        // {
+        if (element.getElementType().equals("")
+            || (element.isComplexType() && !element.isEnumeratedType() && !element.isSimpleType())
+            || (element.getElementType() == null)) {
+          isAggregate = true;
+        } else {
+          isAggregate = false;
+        }
+
+        if (isAggregate) {
+          changeCS = csAggregate;
+        }
+
+        if (element.getFieldName().startsWith("/")) {
+          changeCS = csEndAggregate;
+        }
+
+        ServiceContractFieldInfo serviceContractFieldInfo = null;
+        if (context.serviceContractInfoMap.get(ecServiceName) != null
+            && !element.getElementPath().isEmpty()) {
+          serviceContractFieldInfo =
+              context
+                  .serviceContractInfoMap
+                  .get(ecServiceName)
+                  .getElementPathToFieldInfoMap()
+                  .get(element.getElementPath());
+        }
+        cellnum = createAndSetValueWithStyle(row, cellnum, element.getLocation(), changeCS);
+
+        if (Context.fieldToTrack.contains(element.getFieldName())) {
+          System.out.println(
+              "FieldsToTrack Service Effected: "
+                  + ecServiceName
+                  + ": fieldName:"
+                  + element.getFieldName());
+        }
+        cellnum = createAndSetValueWithStyle(row, cellnum, element.getFieldName(), changeCS);
+        if (element.getBusinessName().isEmpty()) {
+          String businessName = headerBusinessNameMap.get(element.getFieldName());
+          if (businessName != null) {
+            element.setBusinessName(businessName);
+          } else {
+            businessName =
+                AnnotationAppender.getBusinessNameFromJavaBusinessName(element.getFieldName());
+            if (businessName != null) {
+              element.setBusinessName(businessName);
+            }
+          }
+        }
+        String businessName = element.getBusinessName().trim();
+        if (businessName == null || businessName.isEmpty()) {
+          businessName = context.fullToBusinessNameMap.get(element.getFieldName());
+        }
+        cellnum =
+            createAndSetValueWithStyle(row, cellnum, element.getBusinessName().trim(), changeCS);
+        cellnum =
+            createAndSetValueWithStyle(row, cellnum, element.getFunctionalDesc().trim(), changeCS);
+        if ((serviceContractFieldInfo != null)
+            && !serviceContractFieldInfo.getType().isEmpty()
+            && serviceContractFieldInfo.getType().startsWith("Aggregate")) {
+          String objType =
+              serviceContractFieldInfo
+                  .getType()
+                  .substring(
+                      serviceContractFieldInfo.getType().indexOf("(") + 1,
+                      serviceContractFieldInfo.getType().length() - 1);
+          cellnum = createAndSetValueWithStyle(row, cellnum, objType, changeCS);
+        } else {
+          cellnum = createAndSetValueWithStyle(row, cellnum, element.getElementType(), changeCS);
+
+          if (!element.getElementType().equals("string")
+              && (element.getLocation().equals("path") || element.getLocation().equals("query"))) {
+            System.out.println(
+                "FieldsForValidation:"
+                    + ecServiceName
+                    + ":"
+                    + element.getFieldName()
+                    + ":"
+                    + element.getElementType()
+                    + ":"
+                    + element.getLocation());
+          }
+        }
+
+        String typeQualifier = "";
+
+        if (element.isEnumeratedType()) {
+          typeQualifier = typeQualifier + "Enum\n";
+        }
+        if (!element.getMinLength().isEmpty()) {
+          typeQualifier = typeQualifier + "Minimum Length:" + element.getMinLength() + "\n";
+        }
+
+        if (!element.getMaxLength().isEmpty()) {
+          typeQualifier = typeQualifier + "Maximum Length:" + element.getMaxLength() + "\n";
+        } else {
+          //          if (serviceContractFieldInfo != null
+          //              &&
+          // Context.isSetLengthFromContract(serviceContractFieldInfo.getElementPath())) {
+          //            typeQualifier =
+          //                typeQualifier + "Maximun Length:" +
+          // serviceContractFieldInfo.getMaxLength() + "\n";
+          //          }
+        }
+        if (!element.getMaxValue().isEmpty()) {
+          typeQualifier = typeQualifier + "Maximum Value:" + element.getMaxValue() + "\n";
+        }
+
+        if (!element.getMinValue().isEmpty()) {
+          typeQualifier = typeQualifier + "Minimum Value:" + element.getMinValue() + "\n";
+        }
+        if (!element.getFormat().isEmpty()) {
+          typeQualifier = typeQualifier + "Format:" + element.getFormat() + "\n";
+        } else {
+          if (element.getElementType().equalsIgnoreCase("date")) {
+            typeQualifier = typeQualifier + "Format:" + "YYYY-MM-dd" + "\n";
+          } else if (element.getElementType().equalsIgnoreCase("date-time")) {
+            typeQualifier = typeQualifier + "Format:" + "yyyy-MM-dd'T'HH:mm:ss'Z'" + "\n";
+          } else if (element.getElementType().equalsIgnoreCase("year")) {
+            typeQualifier = typeQualifier + "Format:" + "YYYY" + "\n";
+          } else if (element.getElementType().equalsIgnoreCase("month")) {
+            typeQualifier = typeQualifier + "Format:" + "MM" + "\n";
+          }
+        }
+
+        if (!element.getPattern().isEmpty()) {
+          typeQualifier = typeQualifier + "Pattern:" + element.getPattern() + "\n";
+        }
+
+        cellnum = createAndSetValueWithStyle(row, cellnum, typeQualifier, changeCS);
+
+        if (element.getFieldName().startsWith("/")) {
+          cellnum = createAndSetValueWithStyle(row, cellnum, "", changeCS);
+        } else {
+
+          String required = element.getUsage();
+          if (element.getFieldName().equals("organization-id")
+              && element.getLocation().equals("header")) {
+            required = required.replace("Required Choice", "Required");
+          }
+          if (required.isBlank() || required == null) {
+            if (element.isRequired()) {
+              required = "Required";
+            } else {
+              required = "Optional";
+            }
+          }
+          if (element.isRequired()) {
+            required = required.replace("Optional", "Required");
+          } else {
+            required = required.replace("Required", "Optional");
+          }
+          cellnum = createAndSetValueWithStyle(row, cellnum, String.valueOf(required), changeCS);
+        }
+
+        if (serviceContractFieldInfo != null
+            && serviceContractFieldInfo.getValidValues() != null
+            && !serviceContractFieldInfo.getValidValues().isEmpty()) {
+          cellnum =
+              createAndSetValueWithStyle(
+                  row,
+                  cellnum,
+                  String.join("\n", serviceContractFieldInfo.getValidValues()),
+                  changeCS);
+        } else {
+
+          if (element.getValidValuesVec() != null) {
+            cellnum =
+                createAndSetValueWithStyle(
+                    row, cellnum, String.join("\n", element.getValidValuesVec()), changeCS);
+          } else {
+            cellnum = createAndSetValueWithStyle(row, cellnum, "", changeCS);
+          }
+        }
+
+        cellnum = createAndSetValueWithStyle(row, cellnum, element.getExample(), changeCS);
+        String jsonPath = element.getJsonElementPath().trim();
+        if (element.getUsage().contains("Repeating") && !jsonPath.endsWith("[]")) {
+          jsonPath = jsonPath + "[]";
+        }
+
+        if (!(element.getLocation().equals("Output") || element.getLocation().equals("Input"))) {
+          cellnum = createAndSetValueWithStyle(row, cellnum, element.getFieldName(), changeCS);
+        } else {
+          int serviceNameIndex = jsonPath.indexOf("-/");
+          if (serviceNameIndex > 0) {
+            cellnum =
+                createAndSetValueWithStyle(
+                    row, cellnum, jsonPath.substring(serviceNameIndex + 2), changeCS);
+          } else {
+            cellnum = createAndSetValueWithStyle(row, cellnum, jsonPath, changeCS);
+          }
+        }
+        cellnum = createAndSetValueWithStyle(row, cellnum, element.getComments(), changeCS);
+        cellnum = createAndSetValueWithStyle(row, cellnum, element.getElementPath(), changeCS);
+
+        if (element.getFieldName().startsWith("/")) {
+          cellnum = createAndSetValueWithStyle(row, cellnum, "", changeCS);
+          cellnum = createAndSetValueWithStyle(row, cellnum, "", changeCS);
+          cellnum = createAndSetValueWithStyle(row, cellnum, "", changeCS);
+        } else {
+          if ((serviceContractFieldInfo == null)
+              || (serviceContractFieldInfo.getBusinessName().isEmpty()
+                  || element.getElementPath().isEmpty())) {
+            if (!element.getElementPath().trim().isEmpty()) {
+              System.out.println("Invalid Service Contract Path:" + element.getElementPath());
+            }
+            if (!element.getElementPath().isEmpty()) {
+              //              for (String path :
+              //                  context
+              //                      .serviceContractInfoMap
+              //                      .get(ecServiceName)
+              //                      .getElementPathToFieldInfoMap()
+              //                      .keySet()) {
+              //                System.out.println(path);
+              //              }
+              if (serviceContractFieldInfo == null) {
+                System.out.println(
+                    "Error: Missing field information for Path:" + element.getElementPath());
+              } else if (serviceContractFieldInfo.getBusinessName().isEmpty()) {
+                System.out.println(
+                    "Error: Missing Business Name in Service Contract Path:"
+                        + element.getElementPath());
+              } else {
+
+                System.out.println(
+                    "Error: Invalid Service Contract Path:" + element.getElementPath());
+              }
+            }
+            if (element.getLocation().equals("Output") || element.getLocation().equals("Input")) {
+              cellnum =
+                  createAndSetValueWithStyle(
+                      row, cellnum, "No Matching Path:" + element.getElementPath(), changeCS);
+              cellnum =
+                  createAndSetValueWithStyle(
+                      row, cellnum, "No Matching Path:" + element.getElementPath(), changeCS);
+              cellnum =
+                  createAndSetValueWithStyle(
+                      row, cellnum, "No Matching Path:" + element.getElementPath(), changeCS);
+            }
+          } else {
+            cellnum =
+                populateBusinessRules(
+                    fieldsProcessedForBusinessRules,
+                    cellnum,
+                    element,
+                    changeCS,
+                    serviceContractFieldInfo,
+                    false);
+
+            Iterator<Element> itr = element.getRelatedElements().iterator();
+
+            while (itr.hasNext()) {
+              Element relatedElement = itr.next();
+              ServiceContractFieldInfo relatedServiceContractFieldInfo =
+                  context
+                      .serviceContractInfoMap
+                      .get(ecServiceName)
+                      .getElementPathToFieldInfoMap()
+                      .get(relatedElement.getElementPath());
+
+              if (relatedElement.getElementPath() != null) {
+                row = s.createRow(rowNumber++);
+                row.createCell(11).setCellValue(relatedElement.getElementPath());
+                row.getCell(11).setCellStyle(changeCS);
+
+                mergeRows();
+              }
+              if (serviceContractFieldInfo.getValidValues() != null
+                  && ("SrtBy/RevrsInd".endsWith(relatedElement.getElementPath())
+                      || "SrtBy[]/RevrsInd".endsWith(relatedElement.getElementPath()))) {
+                row.createCell(7)
+                    .setCellValue(
+                        String.join("\n", relatedServiceContractFieldInfo.getValidValues()));
+                row.getCell(7).setCellStyle(changeCS);
+              }
+              cellnum =
+                  populateBusinessRules(
+                      fieldsProcessedForBusinessRules,
+                      12,
+                      relatedElement,
+                      changeCS,
+                      relatedServiceContractFieldInfo,
+                      true);
+            }
+          }
+        }
+
+        // rowNumber++;
+      }
+      // rowNumber++;
+      // rowNumber++;
+      // sheetrownum ++ ;
+
+      row = s.createRow(rowNumber++);
+      row = s.createRow(rowNumber++);
+
+      addSeperatorRow(csHeading2, 13);
+
+      generateMissingFieldsBusinessRulesHeaders();
+
+      row = s.createRow(rowNumber++);
+
+      if (context.serviceContractInfoMap.get(ecServiceName) != null) {
+
+        XSSFCellStyle changeCS = csValue;
+
+        for (String path :
+            context
+                .serviceContractInfoMap
+                .get(ecServiceName)
+                .getElementPathToFieldInfoMap()
+                .keySet()) {
+          if (!fieldsProcessedForBusinessRules.contains(path)) {
+
+            ServiceContractFieldInfo serviceContractFieldInfo =
+                context
+                    .serviceContractInfoMap
+                    .get(ecServiceName)
+                    .getElementPathToFieldInfoMap()
+                    .get(path);
+
+            List<String> ignoredElemList = null;
+            String servicexsdName = "";
+            if (serviceContractFieldInfo.getElementPath().contains("Rqst/")) {
+              servicexsdName = ecServiceName + "Rqst";
+            } else if (serviceContractFieldInfo.getElementPath().contains("Rsp/")) {
+              servicexsdName = ecServiceName + "Rsp";
+            }
+            ignoredElemList = context.ignoredElementsPath.get(servicexsdName);
+
+            List<BusinessRuleInfo> busineeRuleInfoList =
+                serviceContractFieldInfo.getBusinessRules();
+            fieldsProcessedForBusinessRules.add(path);
+
+            //            if (ignoredElemList != null && busineeRuleInfoList.size() > 0) {
+            //              for (String pathToIgn : ignoredElemList) {
+            //                if (path.startsWith(pathToIgn)) {
+            //                  System.out.println("Skipping business rules for path: " + path);
+            //                  continue;
+            //                }
+            //              }
+            //            }
+            int orgCell = cellnum;
+            boolean newPath = true;
+            for (int i = 0; i < busineeRuleInfoList.size(); i++) {
+
+              if (!busineeRuleInfoList.get(i).getMessageNumber().isEmpty()
+                  || !busineeRuleInfoList.get(i).getMessageNumber().isEmpty()
+                  || !busineeRuleInfoList.get(i).getMessageText().isEmpty()) {
+
+                if (path.endsWith("/SorFe")
+                    || path.endsWith("/SorFe/Sor")
+                    || path.endsWith("/SorFe/Sor/PrcsrNme")
+                    || path.endsWith("/SorFe/Sor/ApplNme")
+                    || path.endsWith("/RqstSetSize")
+                    || path.endsWith("/InqRqst/InqFltr")
+                    || path.endsWith("/SrtBy[]")
+                    || path.endsWith("/SrtBy")
+                    || path.endsWith("/ExtdAttFltrCrtra")
+                    || path.isEmpty()) {
+
+                  continue;
+                } else {
+
+                  System.out.println(
+                      "Missing related path mapping Service:"
+                          + servicexsdName
+                          + " Row:"
+                          + row.getRowNum()
+                          + " Path:"
+                          + path);
+
+                  // For now just log... do not update service contract
+                  if (path.startsWith("/")) {
+                    continue;
+                  }
+                }
+
+                if (i > 0 || newPath) {
+                  row = s.createRow(rowNumber++);
+                  cellnum = orgCell;
+                }
+
+                cellnum =
+                    createAndSetValueWithStyle(
+                        row,
+                        0,
+                        serviceContractFieldInfo.getBusinessName() + " - Path:" + path,
+                        changeCS);
+                cellnum =
+                    createAndSetValueWithStyle(
+                        row,
+                        1,
+                        shortToFullNames(busineeRuleInfoList.get(i).getBusinessRule()),
+                        changeCS);
+                cellnum =
+                    createAndSetValueWithStyle(
+                        row, 2, busineeRuleInfoList.get(i).getMessageNumber(), changeCS);
+                cellnum =
+                    createAndSetValueWithStyle(
+                        row, 3, busineeRuleInfoList.get(i).getMessageText(), changeCS);
+              }
+            }
+          }
+        }
+      }
+
+      row = s.createRow(rowNumber++);
+      row = s.createRow(rowNumber++);
+
+      s.setDefaultColumnWidth(30);
+
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+  }
+
+  public void processBusinessRulesOperation(List<Element> mfList, String ecServiceName) {
+    try {
+
+      boolean islastcomplex = true;
+
+      List<String> fieldsProcessedForBusinessRules = new ArrayList();
+
+      // Create header elements
+      row = s.createRow(rowNumber++);
+      s.setColumnWidth(0, 50 * 256);
+
+      int cellnum = 0;
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "Path", csTableTitle);
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "Business Rule", csTableTitle);
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "Message Number", csTableTitle);
+      cellnum = createAndSetValueWithStyle(row, cellnum++, "Message Text", csTableTitle);
+
+      cellnum = 0;
+      boolean inputSeperatorDone = false;
+      boolean outputSeperatorDone = false;
+
+      // sheetrownum =1;
+      for (Element element : mfList) {
+
+        if (element.getLocation().equals("Input") && !inputSeperatorDone) {
+          addBusinessRulesSeperatorRow(csSubHeading1);
+          inputSeperatorDone = true;
+        }
+        if (element.getLocation().equals("Output") && !outputSeperatorDone) {
+          addBusinessRulesSeperatorRow(csSubHeading1);
+          outputSeperatorDone = true;
+        }
+
+        row = s.createRow(rowNumber++);
+        cellnum = 0;
+        if (element.isComplexType()) {
+          spacecount++;
+          islastcomplex = true;
+        }
+        if (element.isComplexType()) {}
+
+        if (element.getElementTag().startsWith("/")) {
+          spacecount--;
+        }
+        // if (mfList.get(rownum).getElementType().equals("")
+        // || mfList.get(rownum).isComplexType()
+        // || mfList.get(rownum).getElementType() == null)
+        // {
+        // continue;
+        // }
+
+        XSSFCellStyle changeCS = csValue;
+
+        boolean isAggregate = false;
+        // if (mfList.get(rownum).getElementType().equals("")
+        // || mfList.get(rownum).getElementType().startsWith(AGGREGATE)
+        // || mfList.get(rownum).getElementType() == null)
+        // {
+        if (element.getElementType().equals("")
+            || (element.isComplexType() && !element.isEnumeratedType() && !element.isSimpleType())
+            || (element.getElementType() == null)) {
+          isAggregate = true;
+        } else {
+          isAggregate = false;
+        }
+
+        if (isAggregate) {
+          changeCS = csAggregate;
+        }
+
+        if (element.getFieldName().startsWith("/")) {
+          changeCS = csEndAggregate;
+        }
+
+        ServiceContractFieldInfo serviceContractFieldInfo = null;
+        if (context.serviceContractInfoMap.get(ecServiceName) != null
+            && !element.getElementPath().isEmpty()) {
+          serviceContractFieldInfo =
+              context
+                  .serviceContractInfoMap
+                  .get(ecServiceName)
+                  .getElementPathToFieldInfoMap()
+                  .get(element.getElementPath());
+        }
+        // cellnum = createAndSetValueWithStyle(row, cellnum, element.getLocation(), changeCS);
+
+        if (Context.fieldToTrack.contains(element.getFieldName())) {
+          System.out.println(
+              "FieldsToTrack Service Effected: "
+                  + ecServiceName
+                  + ": fieldName:"
+                  + element.getFieldName());
+        }
+        // cellnum = createAndSetValueWithStyle(row, cellnum, element.getFieldName(), changeCS);
+        if (element.getBusinessName().isEmpty()) {
+          String businessName = headerBusinessNameMap.get(element.getFieldName());
+          if (businessName != null) {
+            element.setBusinessName(businessName);
+          } else {
+            businessName =
+                AnnotationAppender.getBusinessNameFromJavaBusinessName(element.getFieldName());
+            if (businessName != null) {
+              element.setBusinessName(businessName);
+            }
+          }
+        }
+        String businessName = element.getBusinessName().trim();
+        if (businessName == null || businessName.isEmpty()) {
+          businessName = context.fullToBusinessNameMap.get(element.getFieldName());
+        }
+        // cellnum =
+        // createAndSetValueWithStyle(row, cellnum, element.getBusinessName().trim(), changeCS);
+        // cellnum =
+        // createAndSetValueWithStyle(row, cellnum, element.getFunctionalDesc().trim(), changeCS);
+        if ((serviceContractFieldInfo != null)
+            && !serviceContractFieldInfo.getType().isEmpty()
+            && serviceContractFieldInfo.getType().startsWith("Aggregate")) {
+          String objType =
+              serviceContractFieldInfo
+                  .getType()
+                  .substring(
+                      serviceContractFieldInfo.getType().indexOf("(") + 1,
+                      serviceContractFieldInfo.getType().length() - 1);
+          // cellnum = createAndSetValueWithStyle(row, cellnum, objType, changeCS);
+        } else {
+          // cellnum = createAndSetValueWithStyle(row, cellnum, element.getElementType(), changeCS);
+
+          if (!element.getElementType().equals("string")
+              && (element.getLocation().equals("path") || element.getLocation().equals("query"))) {
+            System.out.println(
+                "FieldsForValidation:"
+                    + ecServiceName
+                    + ":"
+                    + element.getFieldName()
+                    + ":"
+                    + element.getElementType()
+                    + ":"
+                    + element.getLocation());
+          }
+        }
+
+        String typeQualifier = "";
+
+        if (element.isEnumeratedType()) {
+          typeQualifier = typeQualifier + "Enum\n";
+        }
+        if (!element.getMinLength().isEmpty()) {
+          typeQualifier = typeQualifier + "Minimum Length:" + element.getMinLength() + "\n";
+        }
+
+        if (!element.getMaxLength().isEmpty()) {
+          typeQualifier = typeQualifier + "Maximum Length:" + element.getMaxLength() + "\n";
+        } else {
+          //          if (serviceContractFieldInfo != null
+          //              &&
+          // Context.isSetLengthFromContract(serviceContractFieldInfo.getElementPath())) {
+          //            typeQualifier =
+          //                typeQualifier + "Maximun Length:" +
+          // serviceContractFieldInfo.getMaxLength() + "\n";
+          //          }
+        }
+        if (!element.getMaxValue().isEmpty()) {
+          typeQualifier = typeQualifier + "Maximum Value:" + element.getMaxValue() + "\n";
+        }
+
+        if (!element.getMinValue().isEmpty()) {
+          typeQualifier = typeQualifier + "Minimum Value:" + element.getMinValue() + "\n";
+        }
+        if (!element.getFormat().isEmpty()) {
+          typeQualifier = typeQualifier + "Format:" + element.getFormat() + "\n";
+        } else {
+          if (element.getElementType().equalsIgnoreCase("date")) {
+            typeQualifier = typeQualifier + "Format:" + "YYYY-MM-dd" + "\n";
+          } else if (element.getElementType().equalsIgnoreCase("date-time")) {
+            typeQualifier = typeQualifier + "Format:" + "yyyy-MM-dd'T'HH:mm:ss'Z'" + "\n";
+          } else if (element.getElementType().equalsIgnoreCase("year")) {
+            typeQualifier = typeQualifier + "Format:" + "YYYY" + "\n";
+          } else if (element.getElementType().equalsIgnoreCase("month")) {
+            typeQualifier = typeQualifier + "Format:" + "MM" + "\n";
+          }
+        }
+
+        if (!element.getPattern().isEmpty()) {
+          typeQualifier = typeQualifier + "Pattern:" + element.getPattern() + "\n";
+        }
+
+        // cellnum = createAndSetValueWithStyle(row, cellnum, typeQualifier, changeCS);
+
+        if (element.getFieldName().startsWith("/")) {
+          // cellnum = createAndSetValueWithStyle(row, cellnum, "", changeCS);
+        } else {
+
+          String required = element.getUsage();
+          if (element.getFieldName().equals("organization-id")
+              && element.getLocation().equals("header")) {
+            required = required.replace("Required Choice", "Required");
+          }
+          if (required.isBlank() || required == null) {
+            if (element.isRequired()) {
+              required = "Required";
+            } else {
+              required = "Optional";
+            }
+          }
+          if (element.isRequired()) {
+            required = required.replace("Optional", "Required");
+          } else {
+            required = required.replace("Required", "Optional");
+          }
+          // cellnum = createAndSetValueWithStyle(row, cellnum, String.valueOf(required), changeCS);
+        }
+
+        if (serviceContractFieldInfo != null
+            && serviceContractFieldInfo.getValidValues() != null
+            && !serviceContractFieldInfo.getValidValues().isEmpty()) {
+          //	          cellnum =
+          //	              createAndSetValueWithStyle(
+          //	                  row,
+          //	                  cellnum,
+          //	                  String.join("\n", serviceContractFieldInfo.getValidValues()),
+          //	                  changeCS);
+        } else {
+
+          if (element.getValidValuesVec() != null) {
+            //	            cellnum =
+            //	                createAndSetValueWithStyle(
+            //	                    row, cellnum, String.join("\n", element.getValidValuesVec()),
+            // changeCS);
+          } else {
+            // cellnum = createAndSetValueWithStyle(row, cellnum, "", changeCS);
+          }
+        }
+
+        // cellnum = createAndSetValueWithStyle(row, cellnum, element.getExample(), changeCS);
+        String jsonPath = element.getJsonElementPath().trim();
+        if (element.getUsage().contains("Repeating") && !jsonPath.endsWith("[]")) {
+          jsonPath = jsonPath + "[]";
+        }
+
+        if (!(element.getLocation().equals("Output") || element.getLocation().equals("Input"))) {
+          cellnum = createAndSetValueWithStyle(row, cellnum, element.getFieldName(), changeCS);
+        } else {
+          int serviceNameIndex = jsonPath.indexOf("-/");
+          if (serviceNameIndex > 0) {
+            cellnum =
+                createAndSetValueWithStyle(
+                    row, cellnum, jsonPath.substring(serviceNameIndex + 2), changeCS);
+          } else {
+            cellnum = createAndSetValueWithStyle(row, cellnum, jsonPath, changeCS);
+          }
+        }
+        // cellnum = createAndSetValueWithStyle(row, cellnum, element.getComments(), changeCS);
+        // cellnum = createAndSetValueWithStyle(row, cellnum, element.getElementPath(), changeCS);
+
+        if (element.getFieldName().startsWith("/") || isAggregate) {
+          cellnum = createAndSetValueWithStyle(row, cellnum, "", changeCS);
+          cellnum = createAndSetValueWithStyle(row, cellnum, "", changeCS);
+          cellnum = createAndSetValueWithStyle(row, cellnum, "", changeCS);
+        } else {
+          if ((serviceContractFieldInfo == null)
+              || (serviceContractFieldInfo.getBusinessName().isEmpty()
+                  || element.getElementPath().isEmpty())) {
+            if (!element.getElementPath().trim().isEmpty()) {
+              System.out.println("Invalid Service Contract Path:" + element.getElementPath());
+            }
+            if (!element.getElementPath().isEmpty()) {
+              //              for (String path :
+              //                  context
+              //                      .serviceContractInfoMap
+              //                      .get(ecServiceName)
+              //                      .getElementPathToFieldInfoMap()
+              //                      .keySet()) {
+              //                System.out.println(path);
+              //              }
+              if (serviceContractFieldInfo == null) {
+                System.out.println(
+                    "Error: Missing field information for Path:" + element.getElementPath());
+              } else if (serviceContractFieldInfo.getBusinessName().isEmpty()) {
+                System.out.println(
+                    "Error: Missing Business Name in Service Contract Path:"
+                        + element.getElementPath());
+              } else {
+
+                System.out.println(
+                    "Error: Invalid Service Contract Path:" + element.getElementPath());
+              }
+            }
+            if (element.getLocation().equals("Output") || element.getLocation().equals("Input")) {
+              //              cellnum =
+              //                  createAndSetValueWithStyle(
+              //                      row, cellnum, "No Matching Path:" + element.getElementPath(),
+              // changeCS);
+              //              cellnum =
+              //                  createAndSetValueWithStyle(
+              //                      row, cellnum, "No Matching Path:" + element.getElementPath(),
+              // changeCS);
+              //              cellnum =
+              //                  createAndSetValueWithStyle(
+              //                      row, cellnum, "No Matching Path:" + element.getElementPath(),
+              // changeCS);
+            }
+          } else {
+            cellnum =
+                populateBusinessRules(
+                    fieldsProcessedForBusinessRules,
+                    cellnum,
+                    element,
+                    changeCS,
+                    serviceContractFieldInfo,
+                    false);
+
+            Iterator<Element> itr = element.getRelatedElements().iterator();
+
+            while (itr.hasNext()) {
+              Element relatedElement = itr.next();
+              ServiceContractFieldInfo relatedServiceContractFieldInfo =
+                  context
+                      .serviceContractInfoMap
+                      .get(ecServiceName)
+                      .getElementPathToFieldInfoMap()
+                      .get(relatedElement.getElementPath());
+
+              if (relatedElement.getElementPath() != null) {
+                row = s.createRow(rowNumber++);
+                row.createCell(11).setCellValue(relatedElement.getElementPath());
+                row.getCell(11).setCellStyle(changeCS);
+
+                mergeRows();
+              }
+              if (serviceContractFieldInfo.getValidValues() != null
+                  && ("SrtBy/RevrsInd".endsWith(relatedElement.getElementPath())
+                      || "SrtBy[]/RevrsInd".endsWith(relatedElement.getElementPath()))) {
+                row.createCell(7)
+                    .setCellValue(
+                        String.join("\n", relatedServiceContractFieldInfo.getValidValues()));
+                row.getCell(7).setCellStyle(changeCS);
+              }
+              cellnum =
+                  populateBusinessRules(
+                      fieldsProcessedForBusinessRules,
+                      12,
+                      relatedElement,
+                      changeCS,
+                      relatedServiceContractFieldInfo,
+                      true);
+            }
+          }
+        }
+
+        // rowNumber++;
+      }
+      // rowNumber++;
+      // rowNumber++;
+      // sheetrownum ++ ;
+
+      row = s.createRow(rowNumber++);
+      row = s.createRow(rowNumber++);
+
+      addSeperatorRow(csHeading2, 4);
+
+      generateMissingFieldsBusinessRulesHeaders();
+
+      row = s.createRow(rowNumber++);
+
+      if (context.serviceContractInfoMap.get(ecServiceName) != null) {
+
+        XSSFCellStyle changeCS = csValue;
+
+        for (String path :
+            context
+                .serviceContractInfoMap
+                .get(ecServiceName)
+                .getElementPathToFieldInfoMap()
+                .keySet()) {
+          if (!fieldsProcessedForBusinessRules.contains(path)) {
+
+            ServiceContractFieldInfo serviceContractFieldInfo =
+                context
+                    .serviceContractInfoMap
+                    .get(ecServiceName)
+                    .getElementPathToFieldInfoMap()
+                    .get(path);
+
+            List<String> ignoredElemList = null;
+            String servicexsdName = "";
+            if (serviceContractFieldInfo.getElementPath().contains("Rqst/")) {
+              servicexsdName = ecServiceName + "Rqst";
+            } else if (serviceContractFieldInfo.getElementPath().contains("Rsp/")) {
+              servicexsdName = ecServiceName + "Rsp";
+            }
+            ignoredElemList = context.ignoredElementsPath.get(servicexsdName);
+
+            List<BusinessRuleInfo> busineeRuleInfoList =
+                serviceContractFieldInfo.getBusinessRules();
+            fieldsProcessedForBusinessRules.add(path);
+
+            //            if (ignoredElemList != null && busineeRuleInfoList.size() > 0) {
+            //              for (String pathToIgn : ignoredElemList) {
+            //                if (path.startsWith(pathToIgn)) {
+            //                  System.out.println("Skipping business rules for path: " + path);
+            //                  continue;
+            //                }
+            //              }
+            //            }
+            int orgCell = cellnum;
+            boolean newPath = true;
+            for (int i = 0; i < busineeRuleInfoList.size(); i++) {
+
+              if (!busineeRuleInfoList.get(i).getMessageNumber().isEmpty()
+                  || !busineeRuleInfoList.get(i).getMessageNumber().isEmpty()
+                  || !busineeRuleInfoList.get(i).getMessageText().isEmpty()) {
+
+                if (path.endsWith("/SorFe")
+                    || path.endsWith("/SorFe/Sor")
+                    || path.endsWith("/SorFe/Sor/PrcsrNme")
+                    || path.endsWith("/SorFe/Sor/ApplNme")
+                    || path.endsWith("/RqstSetSize")
+                    || path.endsWith("/InqRqst/InqFltr")
+                    || path.endsWith("/SrtBy[]")
+                    || path.endsWith("/SrtBy")
+                    || path.endsWith("/ExtdAttFltrCrtra")
+                    || path.isEmpty()) {
+
+                  continue;
+                } else {
+
+                  System.out.println(
+                      "Missing related path mapping Service:"
+                          + servicexsdName
+                          + " Row:"
+                          + row.getRowNum()
+                          + " Path:"
+                          + path);
+
+                  // For now just log... do not update service contract
+                  if (path.startsWith("/")) {
+                    continue;
+                  }
+                }
+
+                if (i > 0 || newPath) {
+                  row = s.createRow(rowNumber++);
+                  cellnum = orgCell;
+                }
+
+                cellnum =
+                    createAndSetValueWithStyle(
+                        row,
+                        0,
+                        serviceContractFieldInfo.getBusinessName() + " - Path:" + path,
+                        changeCS);
+                cellnum =
+                    createAndSetValueWithStyle(
+                        row,
+                        1,
+                        shortToFullNames(busineeRuleInfoList.get(i).getBusinessRule()),
+                        changeCS);
+                cellnum =
+                    createAndSetValueWithStyle(
+                        row, 2, busineeRuleInfoList.get(i).getMessageNumber(), changeCS);
+                cellnum =
+                    createAndSetValueWithStyle(
+                        row, 3, busineeRuleInfoList.get(i).getMessageText(), changeCS);
+              }
+            }
+          }
+        }
+      }
+
+      row = s.createRow(rowNumber++);
+      row = s.createRow(rowNumber++);
+
+      s.setDefaultColumnWidth(30);
+
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+  }
+
+  public void mergeRows() {
+    if (rowNumber > 0) {
+
+      //      s.addMergedRegion(new CellRangeAddress(rowNumber, rowNumber - 1, 0, 0));
+      //      s.addMergedRegion(new CellRangeAddress(rowNumber, rowNumber - 1, 1, 1));
+      //      s.addMergedRegion(new CellRangeAddress(rowNumber, rowNumber - 1, 2, 2));
+      //      s.addMergedRegion(new CellRangeAddress(rowNumber, rowNumber - 1, 3, 3));
+      //      s.addMergedRegion(new CellRangeAddress(rowNumber, rowNumber - 1, 4, 4));
+      //      s.addMergedRegion(new CellRangeAddress(rowNumber, rowNumber - 1, 5, 5));
+      //      s.addMergedRegion(new CellRangeAddress(rowNumber, rowNumber - 1, 6, 6));
+      //      s.addMergedRegion(new CellRangeAddress(rowNumber, rowNumber - 1, 7, 7));
+      //      s.addMergedRegion(new CellRangeAddress(rowNumber, rowNumber - 1, 8, 8));
+      //      s.addMergedRegion(new CellRangeAddress(rowNumber, rowNumber - 1, 9, 9));
+    }
+  }
+
+  public int populateBusinessRules(
+      List<String> fieldsProcessedForBusinessRules,
+      int cellnum,
+      Element element,
+      XSSFCellStyle changeCS,
+      ServiceContractFieldInfo serviceContractFieldInfo,
+      boolean related) {
+
+    if (element.getElementPath() != null
+        && element.getElementPath().endsWith("/FeRqst/SorFe/SorFeId")) {
+      return cellnum;
+    }
+
+    List<BusinessRuleInfo> busineeRuleInfoList = serviceContractFieldInfo.getBusinessRules();
+    fieldsProcessedForBusinessRules.add(element.getElementPath());
+    int orgCell = cellnum;
+    for (int i = 0; i < busineeRuleInfoList.size(); i++) {
+      if (busineeRuleInfoList.get(i).getBusinessRule().isEmpty()
+          && busineeRuleInfoList.get(i).getMessageNumber().isEmpty()
+          && busineeRuleInfoList.get(i).getMessageText().isEmpty()) {
+        continue;
+      }
+      if (i > 0) {
+        row = s.createRow(rowNumber++);
+        cellnum = orgCell;
+
+        mergeRows();
+      }
+      //      if (related) {
+      //        if (serviceContractFieldInfo.getValidValues() != null) {
+      //          row.createCell(cellnum - 5)
+      //              .setCellValue(String.join("\n", serviceContractFieldInfo.getValidValues()));
+      //          row.getCell(cellnum - 5).setCellStyle(changeCS);
+      //        }
+      //
+      //        if (shortToFullNames(element.getElementPath()) != null) {
+      //          row.createCell(cellnum -
+      // 1).setCellValue(shortToFullNames(element.getElementPath()));
+      //          row.getCell(cellnum - 1).setCellStyle(changeCS);
+      //        }
+      //      }
+
+      cellnum =
+          createAndSetValueWithStyle(
+              row,
+              cellnum,
+              shortToFullNames(busineeRuleInfoList.get(i).getBusinessRule()),
+              changeCS);
+      cellnum =
+          createAndSetValueWithStyle(
+              row, cellnum, busineeRuleInfoList.get(i).getMessageNumber(), changeCS);
+      cellnum =
+          createAndSetValueWithStyle(
+              row, cellnum, busineeRuleInfoList.get(i).getMessageText(), changeCS);
+    }
+    return cellnum;
+  }
+
+  /**
+   * Convenient method to create cell and associate style based on the element type
+   *
+   * @param r
+   * @param cellnum
+   * @param value
+   * @param cs
+   * @return
+   */
+  private static int createAndSetValueWithStyle(
+      XSSFRow r, int cellnum, String value, XSSFCellStyle cs) {
+    XSSFCell cell = r.createCell(cellnum++);
+    cell.setCellValue(value);
+    if (cs != null) {
+      cell.setCellStyle(cs);
+    }
+    return cellnum;
+  }
+
+  private static XSSFCell createCell(XSSFWorkbook wb, XSSFRow r, int columnIndex) {
+
+    XSSFCellStyle cs = wb.createCellStyle();
+    cs.setWrapText(true);
+
+    XSSFCell cell = r.createCell(columnIndex);
+    cell.setCellStyle(cs);
+    return cell;
+  }
+}
